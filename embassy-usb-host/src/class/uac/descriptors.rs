@@ -1343,8 +1343,6 @@ mod test {
         ];
         buffer[..descriptors.len()].copy_from_slice(&descriptors);
         let descriptor = ConfigurationDescriptor {
-            len: 0,
-            descriptor_type: 0,
             total_len: 0,
             num_interfaces: 0,
             configuration_value: 1,

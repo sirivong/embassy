@@ -218,34 +218,43 @@ impl USBDescriptor for DeviceDescriptor {
     }
 }
 
-/// USB Configuration Descriptor header with a reference to the sub-descriptor buffer.
-#[derive(Copy, Clone, Debug)]
+/// Standard USB Configuration Descriptor.
+///
+/// When a configuration descriptor is requested, all related descriptors are returned. (USB 2.0 §9.6.3)
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ConfigurationDescriptor<'a> {
-    pub len: u8,
-    pub descriptor_type: u8,
+    /// Total length of data returned for this configuration.
+    ///
+    /// The data includes this descriptor, interface descriptors,
+    /// endpoint descriptors, and possibly other descriptors.
     pub total_len: u16,
+    /// Number of interface descriptors.
     pub num_interfaces: u8,
+    /// Configuration ID.
     pub configuration_value: u8,
+    /// Configuration string.
     pub configuration_name: StringIndex,
+    /// Configuration attribute bitmap.
     pub attributes: u8,
+    /// Maximum bus power that will be consumed in 2mA units.
     pub max_power: u8,
     /// The raw bytes following the 9-byte header (interface + endpoint descriptors).
     pub buffer: &'a [u8],
 }
 
+impl ExtendableDescriptor for ConfigurationDescriptor<'_> {
+    const MIN_LEN: u8 = 9;
+}
+
 impl USBDescriptor for ConfigurationDescriptor<'_> {
-    const BUF_SIZE: usize = 9;
+    const BUF_SIZE: usize = Self::MIN_LEN as usize;
     const DESC_TYPE: u8 = descriptor_type::CONFIGURATION;
-    type Error = ();
+    type Error = DescriptorError;
 
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        if bytes.len() < Self::BUF_SIZE || bytes[1] != Self::DESC_TYPE {
-            return Err(());
-        }
+        Self::match_bytes(bytes)?;
         Ok(Self {
-            len: bytes[0],
-            descriptor_type: bytes[1],
             total_len: u16::from_le_bytes([bytes[2], bytes[3]]),
             num_interfaces: bytes[4],
             configuration_value: bytes[5],
@@ -265,8 +274,6 @@ impl<'a> ConfigurationDescriptor<'a> {
         }
         let total_length = u16::from_le_bytes([buf[2], buf[3]]);
         Ok(Self {
-            len: buf[0],
-            descriptor_type: buf[1],
             total_len: total_length,
             num_interfaces: buf[4],
             configuration_value: buf[5],
