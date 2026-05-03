@@ -135,38 +135,67 @@ impl USBDescriptor for DeviceDescriptorPartial {
     }
 }
 
-/// USB Device Descriptor (18 bytes).
-#[derive(Copy, Clone, Debug)]
+/// Standard USB Device Descriptor.
+///
+/// Each USB device has exactly one device descriptor, which contains information that
+/// applies globally to the device and all of it's configurations (USB 2.0 §9.6.1).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct DeviceDescriptor {
-    pub len: u8,
-    pub descriptor_type: u8,
+    /// USB specification version that the device and it's descriptors comply to.
     pub bcd_usb: u16,
+    /// Class code.
+    ///
+    /// If the class is 0, then each configuration interface has an independent class code.
+    ///
+    /// If the class is 0xff, then the device class is vendor-specific.
     pub device_class: u8,
+    /// Subclass code.
+    ///
+    /// If the class is 0, then the subclass must be 0.
+    ///
+    /// If the subclass is 0xff, then the device subclass is vendor-specific.
     pub device_subclass: u8,
+    /// Protocol code.
+    ///
+    /// If the protocol is 0, then there is no class-specific device protocol.
+    /// However, individual interfaces may still use a class-specific protocol.
+    ///
+    /// If the protocol is 0xff, then the device protocol is vendor-specific.
     pub device_protocol: u8,
+    /// Maximum packet size for endpoint 0.
+    ///
+    /// For USB 2.0, the only valid sizes are 8, 16, 32, 64.
+    /// For USB 3.2, this value is a 2-based exponent.
     pub max_packet_size0: u8,
+    /// Vendor ID.
     pub vendor_id: u16,
+    /// Product ID.
     pub product_id: u16,
+    /// Device version.
     pub bcd_device: u16,
+    /// Manufacturer string.
     pub manufacturer: StringIndex,
+    /// Product string.
     pub product: StringIndex,
+    /// Serial number string.
     pub serial_number: StringIndex,
+    /// Number of possible configurations.
     pub num_configurations: u8,
 }
 
+impl ExtendableDescriptor for DeviceDescriptor {
+    const MIN_LEN: u8 = 18;
+}
+
 impl USBDescriptor for DeviceDescriptor {
-    const BUF_SIZE: usize = 18;
+    const BUF_SIZE: usize = Self::MIN_LEN as usize;
     const DESC_TYPE: u8 = descriptor_type::DEVICE;
-    type Error = ();
+    type Error = DescriptorError;
 
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        if bytes.len() < Self::BUF_SIZE || bytes[1] != Self::DESC_TYPE {
-            return Err(());
-        }
+        Self::match_bytes(bytes)?;
         Ok(Self {
-            len: bytes[0],
-            descriptor_type: bytes[1],
             bcd_usb: u16::from_le_bytes([bytes[2], bytes[3]]),
             device_class: bytes[4],
             device_subclass: bytes[5],
