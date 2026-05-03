@@ -327,10 +327,7 @@ impl<'a> ConfigurationDescriptorChain<'a> {
 
     /// Iterate over all raw descriptors in this Configuration.
     pub fn iter_descriptors(&self) -> RawDescriptorIterator<'a> {
-        RawDescriptorIterator {
-            buf: self.buffer,
-            offset: 0,
-        }
+        RawDescriptorIterator::new(self.buffer)
     }
 
     /// Iterate over all interface descriptors of this Configuration.
@@ -522,29 +519,25 @@ pub type InterfaceDescriptorChain<'a> = DescriptorChain<'a, InterfaceDescriptor>
 impl<'a> InterfaceDescriptorChain<'a> {
     pub(crate) fn try_from_bytes(bytes: &'a [u8]) -> Result<Self, DescriptorError> {
         let descriptor = InterfaceDescriptor::try_from_bytes(bytes)?;
-        let endpoints = &bytes[bytes[0] as usize..];
-        let mut raw = RawDescriptorIterator {
-            buf: endpoints,
-            offset: 0,
-        };
-        let next_iface_index = raw
-            .find_map(|(index, v)| {
-                v.get(1)
-                    .is_some_and(|v| *v == InterfaceDescriptor::DESC_TYPE)
-                    .then_some(index)
-            })
-            .unwrap_or(endpoints.len());
-        // up to the next interface descriptor
-        let buffer = &endpoints[..next_iface_index];
-        Ok(Self { descriptor, buffer })
+        if let Some(endpoints) = bytes.get(bytes[0] as usize..) {
+            let mut next_iface_index = endpoints.len();
+            for (index, bytes) in RawDescriptorIterator::new(endpoints) {
+                if bytes.get(1) == Some(&InterfaceDescriptor::DESC_TYPE) {
+                    next_iface_index = index;
+                    break;
+                }
+            }
+            // up to the next interface descriptor
+            let buffer = &endpoints[..next_iface_index];
+            Ok(Self { descriptor, buffer })
+        } else {
+            Err(DescriptorError::UnexpectedEndOfBuffer)
+        }
     }
 
     /// Iterate over raw descriptors inside this interface.
     pub fn iter_descriptors(&self) -> RawDescriptorIterator<'_> {
-        RawDescriptorIterator {
-            buf: self.buffer,
-            offset: 0,
-        }
+        RawDescriptorIterator::new(self.buffer)
     }
 
     /// Iterate over endpoint descriptors inside this interface.
@@ -583,23 +576,26 @@ pub struct RawDescriptorIterator<'a> {
     offset: usize,
 }
 
+impl<'a> RawDescriptorIterator<'a> {
+    pub fn new(buf: &'a [u8]) -> Self {
+        Self { buf, offset: 0 }
+    }
+}
+
 impl<'a> Iterator for RawDescriptorIterator<'a> {
     type Item = (usize, &'a [u8]);
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.offset >= self.buf.len() {
-            return None;
+        let offset = self.offset;
+        if let Some(&len) = self.buf.get(offset)
+            && len > 0
+        {
+            self.offset += len as usize;
+            if let Some(bytes) = self.buf.get(offset..self.offset) {
+                return Some((offset, bytes));
+            }
         }
-        let pre = self.offset;
-        let len = self.buf[pre] as usize;
-        if len == 0 {
-            return None;
-        }
-        self.offset += len;
-        if self.offset > self.buf.len() {
-            return None;
-        }
-        Some((pre, &self.buf[pre..self.offset]))
+        None
     }
 }
 
