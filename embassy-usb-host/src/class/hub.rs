@@ -5,6 +5,7 @@
 //! Requires the USB driver to support Interrupt IN pipes.
 
 use core::num::NonZeroU8;
+use core::ops::Deref;
 
 use bitflags::bitflags;
 use embassy_time::Timer;
@@ -62,7 +63,7 @@ impl<'d, A: UsbHostAllocator<'d>, const MAX_PORTS: usize> HubHandler<'d, A, MAX_
             .iter_interface()
             .find(|v| {
                 matches!(
-                    v,
+                    v.deref(),
                     InterfaceDescriptor {
                         interface_class: 0x09,
                         interface_subclass: 0x0,

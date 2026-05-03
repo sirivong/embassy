@@ -357,14 +357,15 @@ impl<'a> ConfigurationDescriptorChain<'a> {
         if !visitor.on_configuration(self) {
             return Ok(());
         }
-        let mut current_iface: Option<InterfaceDescriptor<'a>> = None;
+        let mut current_iface: Option<InterfaceDescriptorChain<'a>> = None;
         for (_, bytes) in self.iter_descriptors() {
             if bytes.len() < 2 {
                 continue;
             }
             match bytes[1] {
                 descriptor_type::INTERFACE => {
-                    let iface = InterfaceDescriptor::try_from_bytes(bytes).map_err(|_| VisitError::BadDescriptor)?;
+                    let iface =
+                        InterfaceDescriptorChain::try_from_bytes(bytes).map_err(|_| VisitError::BadDescriptor)?;
                     current_iface = Some(iface);
                     if !visitor.on_interface(&iface) {
                         return Ok(());
@@ -404,19 +405,19 @@ pub trait DescriptorVisitor<'a> {
     }
 
     /// Return `false` to stop iteration early
-    fn on_interface(&mut self, _i: &InterfaceDescriptor<'a>) -> bool {
+    fn on_interface(&mut self, _i: &InterfaceDescriptorChain<'a>) -> bool {
         true
     }
 
     /// Return `false` to stop iteration early
-    fn on_endpoint(&mut self, _iface: &InterfaceDescriptor<'a>, _e: &EndpointDescriptor) -> bool {
+    fn on_endpoint(&mut self, _iface: &InterfaceDescriptorChain<'a>, _e: &EndpointDescriptor) -> bool {
         true
     }
 
     /// Catches every sub-descriptor that isn't an interface or endpoint:
     /// CS_INTERFACE, CS_ENDPOINT, HID, vendor-specific, etc.
     /// Return `Ok(false)` to stop iteration early without an error, or `Err(e)` to stop with one.
-    fn on_other(&mut self, _iface: Option<&InterfaceDescriptor<'a>>, _raw: &[u8]) -> Result<bool, Self::Error> {
+    fn on_other(&mut self, _iface: Option<&InterfaceDescriptorChain<'a>>, _raw: &[u8]) -> Result<bool, Self::Error> {
         Ok(true)
     }
 }
@@ -431,15 +432,15 @@ impl<'a> DescriptorVisitor<'a> for ShowDescriptors {
         debug!("{:?}", c);
         true
     }
-    fn on_interface(&mut self, i: &InterfaceDescriptor) -> bool {
+    fn on_interface(&mut self, i: &InterfaceDescriptorChain) -> bool {
         debug!("  {:?}", i);
         true
     }
-    fn on_endpoint(&mut self, _i: &InterfaceDescriptor, e: &EndpointDescriptor) -> bool {
+    fn on_endpoint(&mut self, _i: &InterfaceDescriptorChain, e: &EndpointDescriptor) -> bool {
         debug!("    {:?}", e);
         true
     }
-    fn on_other(&mut self, _i: Option<&InterfaceDescriptor>, d: &[u8]) -> Result<bool, Self::Error> {
+    fn on_other(&mut self, _i: Option<&InterfaceDescriptorChain>, d: &[u8]) -> Result<bool, Self::Error> {
         let dlen = d[0];
         let dtype = d[1];
         let domain = match dtype & 0x60 {
@@ -458,7 +459,7 @@ impl<'a> DescriptorVisitor<'a> for ShowDescriptors {
 /// A configuration provides one or more interfaces. (USB 2.0 §9.6.5)
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
-pub struct InterfaceDescriptor<'a> {
+pub struct InterfaceDescriptor {
     /// Interface index in this configuration (0-based).
     pub interface_number: u8,
     /// Alternate setting ID of this interface.
@@ -485,15 +486,13 @@ pub struct InterfaceDescriptor<'a> {
     pub interface_protocol: u8,
     /// Interface string.
     pub interface_name: StringIndex,
-    /// All bytes following this descriptor up to (but not including) the next interface descriptor.
-    pub buffer: &'a [u8],
 }
 
-impl ExtendableDescriptor for InterfaceDescriptor<'_> {
+impl ExtendableDescriptor for InterfaceDescriptor {
     const MIN_LEN: u8 = 9;
 }
 
-impl USBDescriptor for InterfaceDescriptor<'_> {
+impl USBDescriptor for InterfaceDescriptor {
     const BUF_SIZE: usize = Self::MIN_LEN as usize;
     const DESC_TYPE: u8 = descriptor_type::INTERFACE;
     type Error = DescriptorError;
@@ -508,37 +507,36 @@ impl USBDescriptor for InterfaceDescriptor<'_> {
             interface_subclass: bytes[6],
             interface_protocol: bytes[7],
             interface_name: bytes[8],
-            buffer: &[],
         })
     }
 }
 
-impl<'a> InterfaceDescriptor<'a> {
-    const BUF_SIZE: usize = 9;
-    const DESC_TYPE: u8 = descriptor_type::INTERFACE;
+/// The chain of descriptors of a [InterfaceDescriptor].
+///
+/// A [ConfigurationDescriptorChain] provides one or more interface descriptors (USB 2.0 §9.6.5).
+/// Each interface chain includes endpoint descriptors, and possibly other descriptors.
+///
+/// The buffer goes up to the next interface descriptor.
+pub type InterfaceDescriptorChain<'a> = DescriptorChain<'a, InterfaceDescriptor>;
 
-    pub(crate) fn try_from_bytes(bytes: &'a [u8]) -> Result<Self, ()> {
-        if bytes.len() < Self::BUF_SIZE || bytes[1] != Self::DESC_TYPE {
-            return Err(());
-        }
+impl<'a> InterfaceDescriptorChain<'a> {
+    pub(crate) fn try_from_bytes(bytes: &'a [u8]) -> Result<Self, DescriptorError> {
+        let descriptor = InterfaceDescriptor::try_from_bytes(bytes)?;
         let endpoints = &bytes[bytes[0] as usize..];
         let mut raw = RawDescriptorIterator {
             buf: endpoints,
             offset: 0,
         };
         let next_iface_index = raw
-            .find_map(|(index, v)| v.get(1).is_some_and(|v| *v == Self::DESC_TYPE).then_some(index))
+            .find_map(|(index, v)| {
+                v.get(1)
+                    .is_some_and(|v| *v == InterfaceDescriptor::DESC_TYPE)
+                    .then_some(index)
+            })
             .unwrap_or(endpoints.len());
-        Ok(Self {
-            interface_number: bytes[2],
-            alternate_setting: bytes[3],
-            num_endpoints: bytes[4],
-            interface_class: bytes[5],
-            interface_subclass: bytes[6],
-            interface_protocol: bytes[7],
-            interface_name: bytes[8],
-            buffer: &endpoints[..next_iface_index],
-        })
+        // up to the next interface descriptor
+        let buffer = &endpoints[..next_iface_index];
+        Ok(Self { descriptor, buffer })
     }
 
     /// Iterate over raw descriptors inside this interface.
@@ -566,14 +564,14 @@ pub struct InterfaceIterator<'a> {
 }
 
 impl<'a> Iterator for InterfaceIterator<'a> {
-    type Item = InterfaceDescriptor<'a>;
+    type Item = InterfaceDescriptorChain<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         if self.offset >= self.cfg_desc.buffer.len() {
             return None;
         }
         let remaining = &self.cfg_desc.buffer[self.offset..];
-        let iface = InterfaceDescriptor::try_from_bytes(remaining).ok()?;
+        let iface = InterfaceDescriptorChain::try_from_bytes(remaining).ok()?;
         self.offset += remaining[0] as usize + iface.buffer.len();
         Some(iface)
     }
@@ -609,7 +607,7 @@ impl<'a> Iterator for RawDescriptorIterator<'a> {
 pub struct EndpointIterator<'a> {
     buffer_idx: usize,
     index: usize,
-    iface_desc: &'a InterfaceDescriptor<'a>,
+    iface_desc: &'a InterfaceDescriptorChain<'a>,
 }
 
 impl Iterator for EndpointIterator<'_> {
@@ -719,7 +717,7 @@ mod test {
     use super::*;
 
     struct TestInterface<'a> {
-        interface: InterfaceDescriptor<'a>,
+        interface: InterfaceDescriptorChain<'a>,
         endpoints: Vec<EndpointDescriptor, 4>,
     }
 
@@ -752,7 +750,7 @@ mod test {
             true
         }
 
-        fn on_interface(&mut self, i: &InterfaceDescriptor<'a>) -> bool {
+        fn on_interface(&mut self, i: &InterfaceDescriptorChain<'a>) -> bool {
             assert!(self.configuration.is_some());
             let _ = self.interfaces.push(TestInterface {
                 interface: *i,
@@ -761,13 +759,13 @@ mod test {
             true
         }
 
-        fn on_endpoint(&mut self, _iface: &InterfaceDescriptor<'a>, e: &EndpointDescriptor) -> bool {
+        fn on_endpoint(&mut self, _iface: &InterfaceDescriptorChain<'a>, e: &EndpointDescriptor) -> bool {
             assert!(!self.interfaces.is_empty());
             let _ = self.interfaces.last_mut().unwrap().endpoints.push(*e);
             true
         }
 
-        fn on_other(&mut self, _iface: Option<&InterfaceDescriptor<'a>>, d: &[u8]) -> Result<bool, Self::Error> {
+        fn on_other(&mut self, _iface: Option<&InterfaceDescriptorChain<'a>>, d: &[u8]) -> Result<bool, Self::Error> {
             assert!(self.configuration.is_some());
             let _ = self.others.push(Vec::from_slice(d).unwrap_or_default());
             Ok(true)

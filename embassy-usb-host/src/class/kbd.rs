@@ -2,6 +2,7 @@
 #![allow(missing_docs)]
 
 use core::num::NonZeroU8;
+use core::ops::Deref;
 
 use bitflags::bitflags;
 use embassy_usb_driver::host::{HostError, UsbHostAllocator, UsbPipe, pipe};
@@ -67,7 +68,7 @@ impl<'d, A: UsbHostAllocator<'d>> KbdHandler<'d, A> {
             .iter_interface()
             .find(|v| {
                 matches!(
-                    v,
+                    v.deref(),
                     InterfaceDescriptor {
                         interface_class: 0x03,
                         interface_subclass: 0x1,

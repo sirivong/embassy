@@ -6,8 +6,8 @@ use heapless::index_map::FnvIndexMap;
 use super::codes::*;
 use crate::descriptor::descriptor_type::{CS_ENDPOINT, CS_INTERFACE, INTERFACE_ASSOCIATION};
 use crate::descriptor::{
-    ConfigurationDescriptorChain, DescriptorVisitor, EndpointDescriptor,
-    InterfaceDescriptor as GenericInterfaceDescriptor, StringIndex, USBDescriptor, VisitError,
+    ConfigurationDescriptorChain, DescriptorVisitor, EndpointDescriptor, InterfaceDescriptorChain, StringIndex,
+    USBDescriptor, VisitError,
 };
 
 const MAX_AUDIO_STREAMING_INTERFACES: usize = 16;
@@ -85,7 +85,7 @@ impl AudioCollectionBuilder {
 impl<'a> DescriptorVisitor<'a> for AudioCollectionBuilder {
     type Error = AudioInterfaceError;
 
-    fn on_interface(&mut self, iface: &GenericInterfaceDescriptor<'a>) -> bool {
+    fn on_interface(&mut self, iface: &InterfaceDescriptorChain) -> bool {
         let Some(ref iad) = self.iad else {
             return true;
         };
@@ -148,7 +148,7 @@ impl<'a> DescriptorVisitor<'a> for AudioCollectionBuilder {
         true
     }
 
-    fn on_endpoint(&mut self, iface: &GenericInterfaceDescriptor<'a>, ep: &EndpointDescriptor) -> bool {
+    fn on_endpoint(&mut self, iface: &InterfaceDescriptorChain, ep: &EndpointDescriptor) -> bool {
         match iface.interface_subclass {
             interface::subclass::AUDIOSTREAMING => {
                 if let Some(si) = self.streaming.last_mut() {
@@ -169,7 +169,7 @@ impl<'a> DescriptorVisitor<'a> for AudioCollectionBuilder {
         true
     }
 
-    fn on_other(&mut self, _iface: Option<&GenericInterfaceDescriptor<'a>>, raw: &[u8]) -> Result<bool, Self::Error> {
+    fn on_other(&mut self, _iface: Option<&InterfaceDescriptorChain>, raw: &[u8]) -> Result<bool, Self::Error> {
         if raw.len() < 2 {
             return Ok(true);
         }
@@ -322,8 +322,8 @@ pub struct InterfaceDescriptor {
     pub interface_name: StringIndex,
 }
 
-impl From<&GenericInterfaceDescriptor<'_>> for InterfaceDescriptor {
-    fn from(g: &GenericInterfaceDescriptor<'_>) -> Self {
+impl<'a> From<&InterfaceDescriptorChain<'a>> for InterfaceDescriptor {
+    fn from(g: &InterfaceDescriptorChain<'a>) -> Self {
         Self {
             interface_number: g.interface_number,
             alternate_setting: g.alternate_setting,
