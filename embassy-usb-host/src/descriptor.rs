@@ -625,15 +625,26 @@ impl Iterator for EndpointIterator<'_> {
     }
 }
 
-/// USB Endpoint Descriptor (7 bytes).
-#[derive(Copy, Clone, Debug, PartialEq)]
+/// Standard USB Endpoint Descriptor.
+///
+/// Contains information to determine the bandwidth requirements. (USB 2.0 §9.6.6)
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct EndpointDescriptor {
-    pub len: u8,
-    pub descriptor_type: u8,
+    /// Endpoint address.
+    ///
+    /// Contains the endpoint number and direction.
     pub endpoint_address: u8,
+    /// Endpoint attribute bitmap.
     pub attributes: u8,
+    /// Maximum packet size (11 bits).
+    ///
+    /// For high-speed isochronous and interrupt endpoints,
+    /// it also specifies aditional transaction opportunities.
     pub max_packet_size: u16,
+    /// Polling interval.
+    ///
+    /// The meaning of this value depends on the transfer type and speed.
     pub interval: u8,
 }
 
@@ -672,21 +683,18 @@ impl EndpointDescriptor {
     }
 }
 
+impl ExtendableDescriptor for EndpointDescriptor {
+    const MIN_LEN: u8 = 7;
+}
+
 impl USBDescriptor for EndpointDescriptor {
-    const BUF_SIZE: usize = 7;
+    const BUF_SIZE: usize = Self::MIN_LEN as usize;
     const DESC_TYPE: u8 = descriptor_type::ENDPOINT;
     type Error = DescriptorError;
 
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        if bytes.len() < Self::BUF_SIZE || bytes.len() < bytes[0] as usize {
-            return Err(DescriptorError::UnexpectedEndOfBuffer);
-        }
-        if bytes[1] != Self::DESC_TYPE {
-            return Err(DescriptorError::BadDescriptorType);
-        }
+        Self::match_bytes(bytes)?;
         Ok(Self {
-            len: bytes[0],
-            descriptor_type: bytes[1],
             endpoint_address: bytes[2],
             attributes: bytes[3],
             max_packet_size: u16::from_le_bytes([bytes[4], bytes[5]]),

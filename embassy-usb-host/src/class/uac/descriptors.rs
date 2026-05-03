@@ -1491,16 +1491,12 @@ mod test {
                         channel_name: 18,
                     },
                     endpoint_descriptor: Some(EndpointDescriptor {
-                        len: 7,
-                        descriptor_type: 5,
                         endpoint_address: 1,
                         attributes: 5,
                         max_packet_size: 512,
                         interval: 1,
                     }),
                     feedback_endpoint_descriptor: Some(EndpointDescriptor {
-                        len: 7,
-                        descriptor_type: 5,
                         endpoint_address: 129,
                         attributes: 17,
                         max_packet_size: 4,
@@ -1548,8 +1544,6 @@ mod test {
                         channel_name: 50,
                     },
                     endpoint_descriptor: Some(EndpointDescriptor {
-                        len: 7,
-                        descriptor_type: 5,
                         endpoint_address: 130,
                         attributes: 5,
                         max_packet_size: 512,
