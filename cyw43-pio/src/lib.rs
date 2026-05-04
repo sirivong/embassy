@@ -270,10 +270,9 @@ where
 
         self.sm.set_enable(true);
 
-        let cmd_arr = [cmd];
         let (rx, tx) = self.sm.rx_tx();
         let rx_fut = rx.dma_pull(&mut self.dma_rx, read, false);
-        let tx_fut = tx.dma_push(&mut self.dma_tx, &cmd_arr, false);
+        let tx_fut = tx.dma_push(&mut self.dma_tx, slice::from_ref(&cmd), false);
         embassy_futures::join::join(tx_fut, rx_fut).await;
 
         let mut status = 0;
