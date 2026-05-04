@@ -115,6 +115,49 @@ pub trait ExtendableDescriptor: USBDescriptor {
     }
 }
 
+/// Variable size descriptor.
+///
+/// Implementors of this trait accept multiple sizes while reading or writing.
+///
+/// The minimum length and the maximum length restrictions are always checked.
+/// Other restrictions should be implemented in [match_bytes_len](Self::match_bytes_len).
+pub trait VariableSizeDescriptor: USBDescriptor {
+    /// Minimum length of the descriptor.
+    ///
+    /// This constant is compared against byte 0 of the buffer.
+    const MIN_LEN: u8;
+
+    /// Maximum length of the descriptor.
+    ///
+    /// This constant is compared against byte 0 of the buffer.
+    const MAX_LEN: u8;
+
+    /// Matches `bytes` with this descriptor.
+    ///
+    /// On success it returns `Ok(())`.
+    /// On error it returns a [DescriptorError].
+    #[inline(always)]
+    fn match_bytes(bytes: &[u8]) -> Result<(), DescriptorError> {
+        if bytes.len() < Self::MIN_LEN as usize {
+            Err(DescriptorError::UnexpectedEndOfBuffer)
+        } else if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&bytes[0]) || !Self::match_bytes_len(bytes) {
+            Err(DescriptorError::BadDescriptorSize)
+        } else if bytes[1] != Self::DESC_TYPE {
+            Err(DescriptorError::BadDescriptorType)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Matches additional restrictions of the length.
+    ///
+    /// By default, there are no additional restrictions.
+    #[inline(always)]
+    fn match_bytes_len(_bytes: &[u8]) -> bool {
+        true
+    }
+}
+
 /// Partial version of [DeviceDescriptor].
 ///
 /// This descriptor is used to read `max_packet_size0` before SET_ADDRESS.
