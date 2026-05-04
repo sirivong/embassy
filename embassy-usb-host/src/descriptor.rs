@@ -16,6 +16,9 @@ pub mod descriptor_type {
     pub const CS_ENDPOINT: u8 = 0x25;
 }
 
+/// String descriptor index.
+///
+/// If the index is 0, then there is no string descriptor for that field.
 pub type StringIndex = u8;
 
 /// Maximum descriptor buffer size used during enumeration.
