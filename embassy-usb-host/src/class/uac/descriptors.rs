@@ -6,8 +6,8 @@ use heapless::index_map::FnvIndexMap;
 use super::codes::*;
 use crate::descriptor::descriptor_type::{CS_ENDPOINT, CS_INTERFACE, INTERFACE_ASSOCIATION};
 use crate::descriptor::{
-    ConfigurationDescriptorChain, DescriptorVisitor, EndpointDescriptor, InterfaceDescriptorChain, StringIndex,
-    USBDescriptor, VisitError,
+    ConfigurationDescriptorChain, DescriptorError, DescriptorVisitor, EndpointDescriptor, ExtendableDescriptor,
+    InterfaceDescriptorChain, StringIndex, USBDescriptor, VisitError,
 };
 
 const MAX_AUDIO_STREAMING_INTERFACES: usize = 16;
@@ -254,8 +254,8 @@ impl AudioInterfaceCollection {
 /// USB interface association descriptor for grouping related interfaces.
 ///
 /// This descriptor is used to associate multiple interfaces that belong to the same function,
-/// such as an audio function with control and streaming interfaces.
-#[derive(Debug, PartialEq)]
+/// such as an audio function with control and streaming interfaces. (USB Audio Devices 2.0 §4.6)
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct InterfaceAssociationDescriptor {
     /// First interface number in the association.
@@ -272,18 +272,17 @@ pub struct InterfaceAssociationDescriptor {
     pub interface_name: StringIndex,
 }
 
+impl ExtendableDescriptor for InterfaceAssociationDescriptor {
+    const MIN_LEN: u8 = 8;
+}
+
 impl USBDescriptor for InterfaceAssociationDescriptor {
-    const BUF_SIZE: usize = 8;
+    const BUF_SIZE: usize = Self::MIN_LEN as usize;
     const DESC_TYPE: u8 = INTERFACE_ASSOCIATION;
-    type Error = ();
+    type Error = DescriptorError;
 
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        if bytes.len() < Self::BUF_SIZE {
-            return Err(());
-        }
-        if bytes[1] != Self::DESC_TYPE {
-            return Err(());
-        }
+        Self::match_bytes(bytes)?;
         Ok(Self {
             first_interface: bytes[2],
             num_interfaces: bytes[3],
