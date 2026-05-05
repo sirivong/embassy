@@ -559,8 +559,8 @@ impl USBDescriptor for ClockSelectorDescriptor {
     }
 }
 
-/// Clock multiplier descriptor for frequency multiplication.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Clock multiplier descriptor for frequency multiplication. (USB Audio Devices 2.0 §4.7.2.3)
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ClockMultiplierDescriptor {
     /// Unique identifier for this clock multiplier.
@@ -573,21 +573,18 @@ pub struct ClockMultiplierDescriptor {
     pub clock_name: StringIndex,
 }
 
-impl USBDescriptor for ClockMultiplierDescriptor {
-    const BUF_SIZE: usize = 7;
-    const DESC_TYPE: u8 = CS_INTERFACE;
-    type Error = AudioInterfaceError;
+impl ExtendableDescriptor for ClockMultiplierDescriptor {
+    const MIN_LEN: u8 = 7;
+}
 
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, AudioInterfaceError> {
-        if bytes.len() < Self::BUF_SIZE {
-            return Err(AudioInterfaceError::InvalidDescriptor);
-        }
-        if bytes[1] != Self::DESC_TYPE {
-            return Err(AudioInterfaceError::InvalidDescriptor);
-        }
-        if bytes[2] != ac_descriptor::CLOCK_MULTIPLIER {
-            return Err(AudioInterfaceError::InvalidDescriptor);
-        }
+impl USBDescriptor for ClockMultiplierDescriptor {
+    const BUF_SIZE: usize = Self::MIN_LEN as usize;
+    const DESC_TYPE: u8 = CS_INTERFACE;
+    const DESC_SUBTYPE: Option<u8> = Some(ac_descriptor::CLOCK_MULTIPLIER);
+    type Error = DescriptorError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, DescriptorError> {
+        Self::match_bytes(bytes)?;
         Ok(Self {
             clock_id: bytes[3],
             source_id: bytes[4],
