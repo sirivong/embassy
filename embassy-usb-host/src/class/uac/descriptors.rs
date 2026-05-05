@@ -49,6 +49,12 @@ pub enum AudioInterfaceError {
     MissingAudioStreamingClassDescriptor,
 }
 
+impl From<DescriptorError> for AudioInterfaceError {
+    fn from(_err: DescriptorError) -> Self {
+        Self::InvalidDescriptor
+    }
+}
+
 struct AudioCollectionBuilder {
     iad: Option<InterfaceAssociationDescriptor>,
     // Interface group cached until the CS_INTERFACE header arrives in on_other.
@@ -450,8 +456,8 @@ impl ClockDescriptor {
     }
 }
 
-/// Clock source descriptor defining an audio clock source.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Clock source descriptor defining an audio clock source. (USB Audio Devices 2.0 §4.7.2.1)
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ClockSourceDescriptor {
     /// Unique identifier for this clock source.
@@ -466,21 +472,18 @@ pub struct ClockSourceDescriptor {
     pub clock_name: StringIndex,
 }
 
+impl ExtendableDescriptor for ClockSourceDescriptor {
+    const MIN_LEN: u8 = 8;
+}
+
 impl USBDescriptor for ClockSourceDescriptor {
-    const BUF_SIZE: usize = 8;
+    const BUF_SIZE: usize = Self::MIN_LEN as usize;
     const DESC_TYPE: u8 = CS_INTERFACE;
-    type Error = AudioInterfaceError;
+    const DESC_SUBTYPE: Option<u8> = Some(ac_descriptor::CLOCK_SOURCE);
+    type Error = DescriptorError;
 
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        if bytes.len() < Self::BUF_SIZE {
-            return Err(AudioInterfaceError::InvalidDescriptor);
-        }
-        if bytes[1] != Self::DESC_TYPE {
-            return Err(AudioInterfaceError::InvalidDescriptor);
-        }
-        if bytes[2] != ac_descriptor::CLOCK_SOURCE {
-            return Err(AudioInterfaceError::InvalidDescriptor);
-        }
+        Self::match_bytes(bytes)?;
         Ok(Self {
             clock_id: bytes[3],
             attributes_bitmap: bytes[4],
