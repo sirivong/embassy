@@ -7,7 +7,7 @@ use super::codes::*;
 use crate::descriptor::descriptor_type::{CS_ENDPOINT, CS_INTERFACE, INTERFACE_ASSOCIATION};
 use crate::descriptor::{
     ConfigurationDescriptorChain, DescriptorError, DescriptorVisitor, EndpointDescriptor, ExtendableDescriptor,
-    InterfaceDescriptor, InterfaceDescriptorChain, StringIndex, USBDescriptor, VisitError,
+    InterfaceDescriptor, InterfaceDescriptorChain, StringIndex, USBDescriptor, VariableSizeDescriptor, VisitError,
 };
 
 const MAX_AUDIO_STREAMING_INTERFACES: usize = 16;
@@ -494,8 +494,8 @@ impl USBDescriptor for ClockSourceDescriptor {
     }
 }
 
-/// Clock selector descriptor for selecting between multiple clock sources.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Clock selector descriptor for selecting between multiple clock sources. (USB Audio Devices 2.0 §4.7.2.2)
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct ClockSelectorDescriptor {
     /// Unique identifier for this clock selector.
@@ -509,28 +509,52 @@ pub struct ClockSelectorDescriptor {
 }
 
 impl ClockSelectorDescriptor {
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, AudioInterfaceError> {
-        if bytes.len() < 7 {
-            return Err(AudioInterfaceError::InvalidDescriptor);
+    /// Maximum number of source ids that we support (at most 248).
+    pub const SUPPORTED_SOURCE_IDS: u8 = MAX_CLOCK_DESCRIPTORS as u8;
+}
+
+impl VariableSizeDescriptor for ClockSelectorDescriptor {
+    const MIN_LEN: u8 = 7;
+    const MAX_LEN: u8 = u8::MAX;
+
+    /// Matches length with the number of source ids.
+    #[inline(always)]
+    fn match_bytes_len(bytes: &[u8]) -> bool {
+        if bytes.len() < 4 {
+            return false;
         }
-        if bytes[1] != CS_INTERFACE {
-            return Err(AudioInterfaceError::InvalidDescriptor);
-        }
-        if bytes[2] != ac_descriptor::CLOCK_SELECTOR {
-            return Err(AudioInterfaceError::InvalidDescriptor);
-        }
-        let mut source_ids = Vec::new();
+        let len = bytes[0] as usize;
         let num_source_ids = bytes[4] as usize;
-        for i in 0..num_source_ids {
-            source_ids
-                .push(bytes[5 + i])
-                .map_err(|_| AudioInterfaceError::BufferFull("Too many clock source ids"))?;
+        len == 7 + num_source_ids
+    }
+}
+
+impl USBDescriptor for ClockSelectorDescriptor {
+    const BUF_SIZE: usize = 7 + Self::SUPPORTED_SOURCE_IDS as usize;
+    const DESC_TYPE: u8 = CS_INTERFACE;
+    const DESC_SUBTYPE: Option<u8> = Some(ac_descriptor::CLOCK_SELECTOR);
+    type Error = AudioInterfaceError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, AudioInterfaceError> {
+        Self::match_bytes(bytes)?;
+        let mut source_ids = Vec::new();
+        let num_source_ids = bytes[4];
+        if num_source_ids as usize > source_ids.capacity() {
+            return Err(AudioInterfaceError::BufferFull("Too many clock source ids"));
+        }
+        for i in 0..num_source_ids as usize {
+            if let Some(&source_id) = bytes.get(5 + i) {
+                let result = source_ids.push(source_id);
+                debug_assert!(result.is_ok(), "push must work");
+            } else {
+                debug_assert!(false, "source_id must exist");
+            }
         }
         Ok(Self {
             clock_id: bytes[3],
             source_ids,
-            controls_bitmap: bytes[5 + num_source_ids as usize],
-            clock_name: bytes[6 + num_source_ids as usize],
+            controls_bitmap: *bytes.get(5 + num_source_ids as usize).unwrap_or(&0),
+            clock_name: *bytes.get(6 + num_source_ids as usize).unwrap_or(&0),
         })
     }
 }
