@@ -97,9 +97,9 @@ use embassy_time::{Duration, Instant, block_for};
 use stm32_bindings::ble::BLEPLATCB_TimerExpiry;
 
 use crate::controller::ChannelPacket;
-use crate::host_if::{TASK_BLE_HOST_MASK, TASK_PRIO_BLE_HOST};
-use crate::util_seq;
 use crate::wba::bindings::{link_layer, mac};
+use crate::wba::host_if::{TASK_BLE_HOST_MASK, TASK_PRIO_BLE_HOST};
+use crate::wba::util_seq;
 
 // RADIO interrupt numbers for STM32WBA
 // RADIO interrupt is position 66

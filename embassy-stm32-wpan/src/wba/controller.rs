@@ -28,13 +28,13 @@ use stm32wb_hci::vendor::CommandHeader;
 use stm32wb_hci::{Event, event};
 
 use crate::bluetooth::error::BleError;
-use crate::host_if::{MAX_BLE_PKT_SIZE, TASK_BLE_HOST_MASK, TASK_LINK_LAYER_MASK, TASK_PRIO_BLE_HOST};
-use crate::linklayer_plat::{
+use crate::runner::BLE_INIT;
+use crate::wba::host_if::{MAX_BLE_PKT_SIZE, TASK_BLE_HOST_MASK, TASK_LINK_LAYER_MASK, TASK_PRIO_BLE_HOST};
+use crate::wba::linklayer_plat::{
     EVENT_CHANNEL, HARDWARE_AES, HARDWARE_PKA, HARDWARE_RNG, run_radio_high_isr, run_radio_sw_low_isr,
 };
-use crate::runner::BLE_INIT;
-use crate::util_seq;
 use crate::wba::ll_sys::init_ble_stack;
+use crate::wba::util_seq;
 
 /// High interrupt handler.
 pub struct HighInterruptHandler {}

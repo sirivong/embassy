@@ -4,9 +4,9 @@
 //! The C layer calls into Rust via the `HostStack_Process` function to deliver HCI events.
 
 // Event delivery is handled by BLECB_Indication (linklayer_plat.rs), not here.
-use crate::util_seq;
 use crate::wba::bindings::link_layer::ble_buff_hdr_t;
 use crate::wba::bindings::mac;
+use crate::wba::util_seq;
 
 // Task ID for BLE Host processing (next available after CFG_TASK_NBR=9)
 pub const CFG_TASK_BLE_HOST: u32 = 9;
