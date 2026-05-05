@@ -50,7 +50,20 @@ pub trait USBDescriptor {
     /// This is the size of the byte buffer that should be used to read or write the descriptor.
     /// This is not the size of the descriptor.
     const BUF_SIZE: usize;
+
+    /// Descriptor type.
+    ///
+    /// This constant is compared against byte 1 of the buffer while reading.
     const DESC_TYPE: u8;
+
+    /// Descriptor subtype.
+    ///
+    /// If this constant is `None`, then it is ignored.
+    /// If this constant is `Some(subtype)`, then `subtype` is compared against byte 2 of the buffer while reading.
+    ///
+    /// This constant is `None` by default.
+    const DESC_SUBTYPE: Option<u8> = None;
+
     type Error;
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error>
     where
@@ -79,6 +92,10 @@ pub trait FixedSizeDescriptor: USBDescriptor {
         } else if bytes[0] != Self::LEN {
             Err(DescriptorError::BadDescriptorSize)
         } else if bytes[1] != Self::DESC_TYPE {
+            Err(DescriptorError::BadDescriptorType)
+        } else if let Some(subtype) = Self::DESC_SUBTYPE
+            && bytes[2] != subtype
+        {
             Err(DescriptorError::BadDescriptorType)
         } else {
             Ok(())
@@ -109,6 +126,10 @@ pub trait ExtendableDescriptor: USBDescriptor {
         } else if bytes[0] < Self::MIN_LEN {
             Err(DescriptorError::BadDescriptorSize)
         } else if bytes[1] != Self::DESC_TYPE {
+            Err(DescriptorError::BadDescriptorType)
+        } else if let Some(subtype) = Self::DESC_SUBTYPE
+            && bytes[2] != subtype
+        {
             Err(DescriptorError::BadDescriptorType)
         } else {
             Ok(())
@@ -144,6 +165,10 @@ pub trait VariableSizeDescriptor: USBDescriptor {
         } else if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&bytes[0]) || !Self::match_bytes_len(bytes) {
             Err(DescriptorError::BadDescriptorSize)
         } else if bytes[1] != Self::DESC_TYPE {
+            Err(DescriptorError::BadDescriptorType)
+        } else if let Some(subtype) = Self::DESC_SUBTYPE
+            && bytes[2] != subtype
+        {
             Err(DescriptorError::BadDescriptorType)
         } else {
             Ok(())
