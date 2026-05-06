@@ -82,33 +82,18 @@ pub async fn ble_runner() -> ! {
 
     info!("BLE runner execution started");
 
-    join(
-        async {
-            let mut ticker = Ticker::every(Duration::from_secs(8));
-            loop {
-                ticker.next().await;
+    loop {
+        // Wait for either a sequencer event or a timer expiry
+        select(
+            util_seq::wait_for_event(),
+            Timer::at(linklayer_plat::earliest_timer_deadline()),
+        )
+        .await;
 
-                util_seq::UTIL_SEQ_ResumeTask(TASK_BLE_HOST_MASK | TASK_LINK_LAYER_MASK);
-            }
-        },
-        async {
-            loop {
-                // Wait for either a sequencer event or a timer expiry
-                select(
-                    util_seq::wait_for_event(),
-                    Timer::at(linklayer_plat::earliest_timer_deadline()),
-                )
-                .await;
+        // Check for any expired timers on each iteration
+        linklayer_plat::check_expired_timers();
 
-                // Check for any expired timers on each iteration
-                linklayer_plat::check_expired_timers();
-
-                // Resume the sequencer context
-                util_seq::seq_resume();
-            }
-        },
-    )
-    .await;
-
-    loop {}
+        // Resume the sequencer context
+        util_seq::seq_resume();
+    }
 }
