@@ -3,6 +3,19 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
+/// Get max value in const context.
+macro_rules! const_max {
+    ($first:expr $(, $next:expr)* $(,)?) => {{
+        let mut max = $first;
+        $(
+            if max < $next {
+                max = $next;
+            }
+        )*
+        max
+    }};
+}
+
 // This mod MUST go first, so that the others see its macros.
 pub(crate) mod fmt;
 

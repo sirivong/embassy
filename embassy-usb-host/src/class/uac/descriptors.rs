@@ -419,7 +419,7 @@ impl USBDescriptor for AudioControlHeaderDescriptor {
 }
 
 /// Enumeration of clock descriptor types.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum ClockDescriptor {
     /// Clock source descriptor.
@@ -430,14 +430,22 @@ pub enum ClockDescriptor {
     Multiplier(ClockMultiplierDescriptor),
 }
 
-impl ClockDescriptor {
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, AudioInterfaceError> {
-        if bytes.len() < 4 {
-            return Err(AudioInterfaceError::InvalidDescriptor);
-        }
-        if bytes[1] != CS_INTERFACE {
-            return Err(AudioInterfaceError::InvalidDescriptor);
-        }
+impl ExtendableDescriptor for ClockDescriptor {
+    const MIN_LEN: u8 = 3;
+}
+
+impl USBDescriptor for ClockDescriptor {
+    // can hold any subdescriptor that is supported.
+    const BUF_SIZE: usize = const_max![
+        ClockSourceDescriptor::BUF_SIZE,
+        ClockSelectorDescriptor::BUF_SIZE,
+        ClockMultiplierDescriptor::BUF_SIZE,
+    ];
+    const DESC_TYPE: u8 = CS_INTERFACE;
+    type Error = AudioInterfaceError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::match_bytes(bytes)?;
         match bytes[2] {
             ac_descriptor::CLOCK_SOURCE => Ok(Self::Source(ClockSourceDescriptor::try_from_bytes(bytes)?)),
             ac_descriptor::CLOCK_SELECTOR => Ok(Self::Selector(ClockSelectorDescriptor::try_from_bytes(bytes)?)),
@@ -445,7 +453,9 @@ impl ClockDescriptor {
             _ => Err(AudioInterfaceError::InvalidDescriptor),
         }
     }
+}
 
+impl ClockDescriptor {
     /// Returns the clock ID for this descriptor.
     pub fn clock_id(&self) -> u8 {
         match self {
