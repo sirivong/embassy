@@ -910,37 +910,37 @@ impl USBDescriptor for OutputTerminalDescriptor {
 }
 
 /// Enumeration of unit descriptor types for audio processing units.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum UnitDescriptor {
-    /// Mixer unit with unit ID.
+    /// Mixer unit with unit ID. (USB Audio Devices 2.0 §4.7.2.6)
     Mixer(u8),
-    /// Selector unit with unit ID.
+    /// Selector unit with unit ID. (USB Audio Devices 2.0 §4.7.2.7)
     Selector(u8),
-    /// Feature unit with unit ID.
+    /// Feature unit with unit ID. (USB Audio Devices 2.0 §4.7.2.8)
     Feature(u8),
-    /// Processing unit with unit ID.
+    /// Processing unit with unit ID. (USB Audio Devices 2.0 §4.7.2.11)
     Processing(u8),
-    /// Effect unit with unit ID.
+    /// Effect unit with unit ID. (USB Audio Devices 2.0 §4.7.2.10)
     Effect(u8),
-    /// Sample rate converter unit with unit ID.
+    /// Sample rate converter unit with unit ID. (USB Audio Devices 2.0 §4.7.2.9)
     SampleRateConverter(u8),
-    /// Extension unit with unit ID.
+    /// Extension unit with unit ID. (USB Audio Devices 2.0 §4.7.2.12)
     Extension(u8),
 }
 
+impl ExtendableDescriptor for UnitDescriptor {
+    const MIN_LEN: u8 = 4;
+}
+
 impl USBDescriptor for UnitDescriptor {
-    const BUF_SIZE: usize = 4; // This is not the true size; Will become variable
+    // This is not the true size; Will become variable
+    const BUF_SIZE: usize = Self::MIN_LEN as usize;
     const DESC_TYPE: u8 = CS_INTERFACE;
-    type Error = ();
+    type Error = DescriptorError;
 
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        if bytes.len() < Self::BUF_SIZE {
-            return Err(());
-        }
-        if bytes[1] != Self::DESC_TYPE {
-            return Err(());
-        }
+        Self::match_bytes(bytes)?;
         match bytes[2] {
             ac_descriptor::MIXER_UNIT => Ok(Self::Mixer(bytes[3])),
             ac_descriptor::SELECTOR_UNIT => Ok(Self::Selector(bytes[3])),
@@ -949,7 +949,7 @@ impl USBDescriptor for UnitDescriptor {
             ac_descriptor::EFFECT_UNIT => Ok(Self::Effect(bytes[3])),
             ac_descriptor::SAMPLE_RATE_CONVERTER => Ok(Self::SampleRateConverter(bytes[3])),
             ac_descriptor::EXTENSION_UNIT => Ok(Self::Extension(bytes[3])),
-            _ => Err(()),
+            _ => Err(DescriptorError::BadDescriptorType),
         }
     }
 }
