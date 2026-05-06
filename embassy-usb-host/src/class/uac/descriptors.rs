@@ -1093,42 +1093,70 @@ impl USBDescriptor for AudioEndpointDescriptor {
 }
 
 /// Enumeration of format type descriptors for different audio formats.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum FormatTypeDescriptor {
-    /// Type I format (PCM, PCM8, etc.).
+    /// Type I format (PCM, PCM8, etc.). (USB Audio Data Formats 2.0 §2.3.1.6)
     I(FormatTypeI),
-    /// Type II format (MPEG, AC-3, etc.).
+    /// Type II format (MPEG, AC-3, etc.). (USB Audio Data Formats 2.0 §2.3.2.6)
     II(FormatTypeII),
-    /// Type III format (IEC1937_AC-3, IEC1937_MPEG-1_Layer1, etc.).
+    /// Type III format (IEC1937_AC-3, IEC1937_MPEG-1_Layer1, etc.). (USB Audio Data Formats 2.0 §2.3.3.1)
     III(FormatTypeIII),
-    /// Type IV format.
+    /// Type IV format. (USB Audio Data Formats 2.0 §2.3.4.1)
     IV,
-    /// Extended Type I format.
+    /// Extended Type I format. (USB Audio Data Formats 2.0 §2.4.1.1)
     ExtendedI(FormatTypeExtendedI),
-    /// Extended Type II format.
+    /// Extended Type II format. (USB Audio Data Formats 2.0 §2.4.2.1)
     ExtendedII(FormatTypeExtendedII),
-    /// Extended Type III format.
+    /// Extended Type III format. (USB Audio Data Formats 2.0 §2.4.3.1)
     ExtendedIII(FormatTypeExtendedIII),
 }
 
 impl FormatTypeDescriptor {
-    fn try_from_bytes(bytes: &[u8]) -> Result<Self, ()> {
-        if bytes.len() < 4 {
-            // minimum length of a format type descriptor
-            return Err(());
-        }
+    /// Size of the byte buffer for [FormatTypeDescriptor::I].
+    pub const BUF_SIZE_I: usize = 6;
+    /// Size of the byte buffer for [FormatTypeDescriptor::II].
+    pub const BUF_SIZE_II: usize = 8;
+    /// Size of the byte buffer for [FormatTypeDescriptor::III].
+    pub const BUF_SIZE_III: usize = 6;
+    /// Size of the byte buffer for [FormatTypeDescriptor::IV].
+    pub const BUF_SIZE_IV: usize = 4;
+    /// Size of the byte buffer for [FormatTypeDescriptor::ExtendedI].
+    pub const BUF_SIZE_EXTENDED_I: usize = 9;
+    /// Size of the byte buffer for [FormatTypeDescriptor::ExtendedII].
+    pub const BUF_SIZE_EXTENDED_II: usize = 10;
+    /// Size of the byte buffer for [FormatTypeDescriptor::ExtendedIII].
+    pub const BUF_SIZE_EXTENDED_III: usize = 8;
+}
+
+impl ExtendableDescriptor for FormatTypeDescriptor {
+    const MIN_LEN: u8 = 4;
+}
+
+impl USBDescriptor for FormatTypeDescriptor {
+    const BUF_SIZE: usize = const_max![
+        Self::BUF_SIZE_I,
+        Self::BUF_SIZE_II,
+        Self::BUF_SIZE_III,
+        Self::BUF_SIZE_IV,
+        Self::BUF_SIZE_EXTENDED_I,
+        Self::BUF_SIZE_EXTENDED_II,
+        Self::BUF_SIZE_EXTENDED_III,
+    ];
+    const DESC_TYPE: u8 = CS_INTERFACE;
+    const DESC_SUBTYPE: Option<u8> = Some(as_descriptor::FORMAT_TYPE);
+    type Error = DescriptorError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::match_bytes(bytes)?;
         let len = bytes[0] as usize;
-        if bytes[1] != CS_INTERFACE {
-            return Err(());
-        }
-        if bytes[2] != as_descriptor::FORMAT_TYPE {
-            return Err(());
+        if bytes.len() < len {
+            return Err(DescriptorError::UnexpectedEndOfBuffer);
         }
         match bytes[3] {
             format_type::I => {
-                if len != 6 {
-                    return Err(());
+                if len != Self::BUF_SIZE_I {
+                    return Err(DescriptorError::BadDescriptorSize);
                 }
                 Ok(Self::I(FormatTypeI {
                     subslot_size: bytes[4],
@@ -1136,8 +1164,8 @@ impl FormatTypeDescriptor {
                 }))
             }
             format_type::II => {
-                if len != 8 {
-                    return Err(());
+                if len != Self::BUF_SIZE_II {
+                    return Err(DescriptorError::BadDescriptorSize);
                 }
                 Ok(Self::II(FormatTypeII {
                     max_bit_rate: u16::from_le_bytes([bytes[4], bytes[5]]),
@@ -1145,8 +1173,8 @@ impl FormatTypeDescriptor {
                 }))
             }
             format_type::III => {
-                if len != 6 {
-                    return Err(());
+                if len != Self::BUF_SIZE_III {
+                    return Err(DescriptorError::BadDescriptorSize);
                 }
                 Ok(Self::III(FormatTypeIII {
                     subslot_size: bytes[4],
@@ -1155,8 +1183,8 @@ impl FormatTypeDescriptor {
             }
             format_type::IV => Ok(Self::IV),
             format_type::EXT_I => {
-                if len != 9 {
-                    return Err(());
+                if len != Self::BUF_SIZE_EXTENDED_I {
+                    return Err(DescriptorError::BadDescriptorSize);
                 }
                 Ok(Self::ExtendedI(FormatTypeExtendedI {
                     subslot_size: bytes[4],
@@ -1167,8 +1195,8 @@ impl FormatTypeDescriptor {
                 }))
             }
             format_type::EXT_II => {
-                if len != 10 {
-                    return Err(());
+                if len != Self::BUF_SIZE_EXTENDED_II {
+                    return Err(DescriptorError::BadDescriptorSize);
                 }
                 Ok(Self::ExtendedII(FormatTypeExtendedII {
                     max_bit_rate: u16::from_le_bytes([bytes[4], bytes[5]]),
@@ -1178,8 +1206,8 @@ impl FormatTypeDescriptor {
                 }))
             }
             format_type::EXT_III => {
-                if len != 8 {
-                    return Err(());
+                if len != Self::BUF_SIZE_EXTENDED_III {
+                    return Err(DescriptorError::BadDescriptorSize);
                 }
                 Ok(Self::ExtendedIII(FormatTypeExtendedIII {
                     subslot_size: bytes[4],
@@ -1188,13 +1216,13 @@ impl FormatTypeDescriptor {
                     sideband_protocol: bytes[7],
                 }))
             }
-            _ => Err(()),
+            _ => Err(DescriptorError::BadDescriptorData),
         }
     }
 }
 
 /// Type I format descriptor for PCM-like formats.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct FormatTypeI {
     /// Size of each subslot in bytes.
@@ -1204,7 +1232,7 @@ pub struct FormatTypeI {
 }
 
 /// Type II format descriptor for compressed formats.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct FormatTypeII {
     /// Maximum bit rate in bits per second.
@@ -1214,7 +1242,7 @@ pub struct FormatTypeII {
 }
 
 /// Type III format descriptor for IEC formats.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct FormatTypeIII {
     /// Size of each subslot in bytes.
@@ -1224,7 +1252,7 @@ pub struct FormatTypeIII {
 }
 
 /// Extended Type I format descriptor.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct FormatTypeExtendedI {
     /// Size of each subslot in bytes.
@@ -1240,7 +1268,7 @@ pub struct FormatTypeExtendedI {
 }
 
 /// Extended Type II format descriptor.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct FormatTypeExtendedII {
     /// Maximum bit rate in bits per second.
@@ -1254,7 +1282,7 @@ pub struct FormatTypeExtendedII {
 }
 
 /// Extended Type III format descriptor.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct FormatTypeExtendedIII {
     /// Size of each subslot in bytes.
