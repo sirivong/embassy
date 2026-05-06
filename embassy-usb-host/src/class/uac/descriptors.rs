@@ -1057,8 +1057,8 @@ impl USBDescriptor for AudioStreamingClassDescriptor {
     }
 }
 
-/// Audio-specific endpoint descriptor containing audio endpoint attributes.
-#[derive(Debug, Clone, PartialEq)]
+/// Audio-specific endpoint descriptor containing audio endpoint attributes. (USB Audio Devices 2.0 §4.10.1.2)
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct AudioEndpointDescriptor {
     /// Bitmap of endpoint attributes.
@@ -1071,21 +1071,18 @@ pub struct AudioEndpointDescriptor {
     pub lock_delay: u16,
 }
 
+impl ExtendableDescriptor for AudioEndpointDescriptor {
+    const MIN_LEN: u8 = 8;
+}
+
 impl USBDescriptor for AudioEndpointDescriptor {
-    const BUF_SIZE: usize = 6;
+    const BUF_SIZE: usize = Self::MIN_LEN as usize;
     const DESC_TYPE: u8 = descriptor_type::CS_ENDPOINT;
-    type Error = ();
+    const DESC_SUBTYPE: Option<u8> = Some(as_descriptor::GENERAL);
+    type Error = DescriptorError;
 
     fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
-        if bytes.len() < Self::BUF_SIZE {
-            return Err(());
-        }
-        if bytes[1] != Self::DESC_TYPE {
-            return Err(());
-        }
-        if bytes[2] != as_descriptor::GENERAL {
-            return Err(());
-        }
+        Self::match_bytes(bytes)?;
         Ok(Self {
             attributes_bitmap: bytes[3],
             controls_bitmap: bytes[4],
