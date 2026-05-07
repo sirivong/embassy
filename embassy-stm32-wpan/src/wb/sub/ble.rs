@@ -17,7 +17,6 @@ use embassy_sync::mutex::Mutex;
 use embassy_sync::signal::Signal;
 #[cfg(feature = "bt-hci")]
 use embassy_sync::waitqueue::AtomicWaker;
-use hci::Opcode;
 
 use crate::sub::mm;
 use crate::util::Flag;
@@ -188,10 +187,9 @@ impl<'a> evt::MemoryManager for Ble<'a> {
     }
 }
 
-pub extern crate stm32wb_hci as hci;
-
-impl<'a> hci::Controller for Ble<'a> {
-    async fn controller_write(&mut self, opcode: Opcode, payload: &[u8]) {
+#[cfg(feature = "wb-hci")]
+impl<'a> stm32wb_hci::Controller for Ble<'a> {
+    async fn controller_write(&mut self, opcode: stm32wb_hci::Opcode, payload: &[u8]) {
         self.tl_write(opcode.0, payload).await;
     }
 
@@ -253,9 +251,10 @@ impl<'a> BleRx<'a> {
     }
 }
 
+#[cfg(feature = "wb-hci")]
 /// Implement Controller for TX (Write only)
-impl<'a> hci::Controller for BleTx<'a> {
-    async fn controller_write(&mut self, opcode: Opcode, payload: &[u8]) {
+impl<'a> stm32wb_hci::Controller for BleTx<'a> {
+    async fn controller_write(&mut self, opcode: stm32wb_hci::Opcode, payload: &[u8]) {
         self.tl_write(opcode.0, payload).await;
     }
 
@@ -264,9 +263,10 @@ impl<'a> hci::Controller for BleTx<'a> {
     }
 }
 
+#[cfg(feature = "wb-hci")]
 /// Implement Controller for RX (Read only)
-impl<'a> hci::Controller for BleRx<'a> {
-    async fn controller_write(&mut self, _opcode: Opcode, _payload: &[u8]) {
+impl<'a> stm32wb_hci::Controller for BleRx<'a> {
+    async fn controller_write(&mut self, _opcode: stm32wb_hci::Opcode, _payload: &[u8]) {
         panic!("BleRx cannot write!");
     }
 
