@@ -55,6 +55,7 @@ async fn main(_spawner: Spawner) {
 
     let mut t_cfg = target::Config::default();
     t_cfg.address = target::Address::Single(ADDR);
+    t_cfg.general_call = target::Status::Enabled;
 
     let mut tgt = target::I2c::new_async(p.LPI2C3, p.P3_21, p.P3_20, Irqs, t_cfg).unwrap();
 
@@ -68,6 +69,7 @@ async fn main(_spawner: Spawner) {
     // Counters
     let mut n_w: u32 = 0;
     let mut n_r: u32 = 0;
+    let mut n_gc: u32 = 0;
     let mut n_err: u32 = 0;
     let mut bytes_w: u64 = 0;
     let mut bytes_r: u64 = 0;
@@ -126,6 +128,18 @@ async fn main(_spawner: Spawner) {
                     }
                 }
             }
+            target::Request::GeneralCall => {
+                // General call is a broadcast write — drain payload.
+                match tgt.async_respond_to_write(&mut wbuf).await {
+                    Ok(_) => {
+                        n_gc = n_gc.wrapping_add(1);
+                    }
+                    Err(e) => {
+                        n_err = n_err.wrapping_add(1);
+                        defmt::warn!("GC err: {:?}  total_err={}", e, n_err);
+                    }
+                }
+            }
             _ => {}
         }
 
@@ -133,12 +147,13 @@ async fn main(_spawner: Spawner) {
         if (now - last_log).as_secs() >= 2 {
             last_log = now;
             defmt::info!(
-                "stats t={}s  W={} ({} B)  R={} ({} B)  ERR={}",
+                "stats t={}s  W={} ({} B)  R={} ({} B)  GC={}  ERR={}",
                 (now - start).as_secs(),
                 n_w,
                 bytes_w as u32,
                 n_r,
                 bytes_r as u32,
+                n_gc,
                 n_err
             );
         }
