@@ -280,14 +280,14 @@ impl<'a, 'b> StorageDevice<'a, 'b, Card> {
 
             if signalling == target {
                 if matches!(signalling, Signalling::SDR50 | Signalling::SDR104) {
-                    #[cfg(dlybsd)]
+                    #[cfg(sdmmc_dlyb)]
                     let tuned = if self.sdmmc.has_dlyb() {
                         self.tune_dlyb(freq, bus_width)?;
                         true
                     } else {
                         false
                     };
-                    #[cfg(not(dlybsd))]
+                    #[cfg(not(sdmmc_dlyb))]
                     let tuned = false;
                     if !tuned {
                         self.sdmmc.set_feedback_clk(true);
@@ -310,7 +310,7 @@ impl<'a, 'b> StorageDevice<'a, 'b, Card> {
         Ok(())
     }
 
-    #[cfg(dlybsd)]
+    #[cfg(sdmmc_dlyb)]
     fn tune_dlyb(&mut self, freq: Hertz, bus_width: BusWidth) -> Result<(), Error> {
         // DLL needs a stable input clock at the target rate to lock.
         self.sdmmc.clkcr_set_clkdiv(freq, bus_width)?;

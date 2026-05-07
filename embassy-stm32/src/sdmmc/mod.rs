@@ -36,7 +36,7 @@ pub mod sd;
 /// Module for SDIO interface
 pub mod sdio;
 
-#[cfg(dlybsd)]
+#[cfg(sdmmc_dlyb)]
 mod dlyb;
 
 /// Interrupt handler.
@@ -498,16 +498,16 @@ pub struct Sdmmc<'d> {
 
     /// Mutually exclusive with [`feedback_clk`]; the two select different
     /// `CLKCR.SELCLKRX` values.
-    #[cfg(dlybsd)]
+    #[cfg(sdmmc_dlyb)]
     dlyb_active: bool,
 
-    #[cfg(dlybsd)]
+    #[cfg(sdmmc_dlyb)]
     dlyb_slot: Option<DlybSlot>,
 
     config: Config,
 }
 
-#[cfg(dlybsd)]
+#[cfg(sdmmc_dlyb)]
 struct DlybSlot {
     regs: crate::pac::dlybsd::Dlybsd,
 }
@@ -555,7 +555,7 @@ impl<'d> Sdmmc<'d> {
             None,
             #[cfg(sdmmc_uhs)]
             None,
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             None,
             config,
         )
@@ -593,7 +593,7 @@ impl<'d> Sdmmc<'d> {
             None,
             #[cfg(sdmmc_uhs)]
             None,
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             None,
             config,
         )
@@ -638,7 +638,7 @@ impl<'d> Sdmmc<'d> {
             None,
             #[cfg(sdmmc_uhs)]
             None,
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             None,
             config,
         )
@@ -672,7 +672,7 @@ impl<'d> Sdmmc<'d> {
             None,
             #[cfg(sdmmc_uhs)]
             None,
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             None,
             config,
         )
@@ -706,7 +706,7 @@ impl<'d> Sdmmc<'d> {
             None,
             #[cfg(sdmmc_uhs)]
             None,
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             None,
             config,
         )
@@ -747,7 +747,7 @@ impl<'d> Sdmmc<'d> {
             None,
             #[cfg(sdmmc_uhs)]
             None,
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             None,
             config,
         )
@@ -793,7 +793,7 @@ impl<'d> Sdmmc<'d> {
             None,
             Some(vswitch),
             None,
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             None,
             config,
         )
@@ -826,7 +826,7 @@ impl<'d> Sdmmc<'d> {
             None,
             Some(vswitch),
             None,
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             None,
             config,
         )
@@ -863,7 +863,7 @@ impl<'d> Sdmmc<'d> {
             None,
             Some(vswitch),
             new_pin!(ckin, CKIN_AF),
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             None,
             config,
         )
@@ -897,14 +897,14 @@ impl<'d> Sdmmc<'d> {
             None,
             Some(vswitch),
             new_pin!(ckin, CKIN_AF),
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             None,
             config,
         )
     }
 }
 
-#[cfg(all(dlybsd, sdmmc_uhs))]
+#[cfg(sdmmc_dlyb)]
 impl<'d> Sdmmc<'d> {
     /// 4-lane SD with UHS-I vswitch and a DLYB block for RX tap tuning.
     /// Use on instances where CKIN is not routed (e.g. STM32N6 SDMMC2).
@@ -944,6 +944,27 @@ impl<'d> Sdmmc<'d> {
             Some(slot),
             config,
         )
+    }
+
+    pub(crate) fn set_dlyb_active(&mut self, on: bool) {
+        self.dlyb_active = on;
+    }
+
+    pub(crate) fn dlyb_enable_lock(&mut self) -> Result<(), Error> {
+        let regs = self.dlyb_slot.as_ref().unwrap().regs;
+        dlyb::Dlyb::new(regs).enable_lock()
+    }
+
+    pub(crate) fn dlyb_set_tap(&mut self, tap: u8) -> Result<(), Error> {
+        let regs = self.dlyb_slot.as_ref().unwrap().regs;
+        dlyb::Dlyb::new(regs).set_tap(tap)
+    }
+
+    pub(crate) fn dlyb_disable(&mut self) {
+        if let Some(slot) = self.dlyb_slot.as_ref() {
+            dlyb::Dlyb::new(slot.regs).disable();
+        }
+        self.dlyb_active = false;
     }
 }
 
@@ -1017,35 +1038,10 @@ impl<'d> Sdmmc<'d> {
     }
 
     pub(crate) fn has_dlyb(&self) -> bool {
-        #[cfg(dlybsd)]
+        #[cfg(sdmmc_dlyb)]
         return self.dlyb_slot.is_some();
-        #[cfg(not(dlybsd))]
+        #[cfg(not(sdmmc_dlyb))]
         return false;
-    }
-
-    #[cfg(dlybsd)]
-    pub(crate) fn set_dlyb_active(&mut self, on: bool) {
-        self.dlyb_active = on;
-    }
-
-    #[cfg(dlybsd)]
-    pub(crate) fn dlyb_enable_lock(&mut self) -> Result<(), Error> {
-        let regs = self.dlyb_slot.as_ref().unwrap().regs;
-        dlyb::Dlyb::new(regs).enable_lock()
-    }
-
-    #[cfg(dlybsd)]
-    pub(crate) fn dlyb_set_tap(&mut self, tap: u8) -> Result<(), Error> {
-        let regs = self.dlyb_slot.as_ref().unwrap().regs;
-        dlyb::Dlyb::new(regs).set_tap(tap)
-    }
-
-    #[cfg(dlybsd)]
-    pub(crate) fn dlyb_disable(&mut self) {
-        if let Some(slot) = self.dlyb_slot.as_ref() {
-            dlyb::Dlyb::new(slot.regs).disable();
-        }
-        self.dlyb_active = false;
     }
 
     /// Restore the level-shifter pin to 3.3V and clear the UHS-related
@@ -1067,7 +1063,7 @@ impl<'d> Sdmmc<'d> {
             self.uhs_active = false;
             self.feedback_clk = false;
         }
-        #[cfg(dlybsd)]
+        #[cfg(sdmmc_dlyb)]
         {
             if let Some(slot) = self.dlyb_slot.as_ref() {
                 let mut d = dlyb::Dlyb::new(slot.regs);
@@ -1109,7 +1105,7 @@ impl<'d> Sdmmc<'d> {
         d7: Option<Flex<'d>>,
         #[cfg(sdmmc_uhs)] vswitch_pin: Option<Output<'d>>,
         #[cfg(sdmmc_uhs)] ckin_pin: Option<Flex<'d>>,
-        #[cfg(dlybsd)] dlyb_slot: Option<DlybSlot>,
+        #[cfg(sdmmc_dlyb)] dlyb_slot: Option<DlybSlot>,
         config: Config,
     ) -> Self {
         rcc::enable_and_reset::<T>();
@@ -1167,9 +1163,9 @@ impl<'d> Sdmmc<'d> {
             #[cfg(sdmmc_uhs)]
             ckin_pin,
 
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             dlyb_active: false,
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             dlyb_slot,
 
             config,
@@ -1410,7 +1406,7 @@ impl<'d> Sdmmc<'d> {
         let self_uhs_active = self.uhs_active;
         #[cfg(sdmmc_uhs)]
         let self_feedback_clk = self.feedback_clk;
-        #[cfg(dlybsd)]
+        #[cfg(sdmmc_dlyb)]
         let self_dlyb_active = self.dlyb_active;
         regs.clkcr().modify(|w| {
             w.set_clkdiv(clkdiv);
@@ -1436,7 +1432,7 @@ impl<'d> Sdmmc<'d> {
             if self_feedback_clk {
                 w.set_selclkrx(1);
             }
-            #[cfg(dlybsd)]
+            #[cfg(sdmmc_dlyb)]
             if self_dlyb_active {
                 w.set_selclkrx(2);
             }
