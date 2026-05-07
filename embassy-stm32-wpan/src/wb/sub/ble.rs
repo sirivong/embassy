@@ -278,7 +278,7 @@ impl<'a> hci::Controller for BleRx<'a> {
 }
 
 #[cfg(feature = "bt-hci")]
-pub struct AtomicController<'d> {
+pub struct ControllerAdapter<'d> {
     hw_ipcc_ble_cmd_channel: Mutex<NoopRawMutex, IpccTxChannel<'d>>,
     ipcc_ble_event_channel: Mutex<NoopRawMutex, IpccRxChannel<'d>>,
     ipcc_hci_acl_tx_data_channel: Mutex<NoopRawMutex, IpccTxChannel<'d>>,
@@ -291,7 +291,7 @@ pub struct AtomicController<'d> {
 }
 
 #[cfg(feature = "bt-hci")]
-impl<'d> embedded_io::ErrorType for AtomicController<'d> {
+impl<'d> embedded_io::ErrorType for ControllerAdapter<'d> {
     type Error = embedded_io::ErrorKind;
 }
 
@@ -308,7 +308,7 @@ fn to_err(e: bt_hci::FromHciBytesError) -> embedded_io::ErrorKind {
 
 #[cfg(feature = "bt-hci")]
 struct SlotGuard<'d, 'a> {
-    controller: &'a AtomicController<'d>,
+    controller: &'a ControllerAdapter<'d>,
 }
 
 #[cfg(feature = "bt-hci")]
@@ -321,7 +321,7 @@ impl<'d, 'a> Drop for SlotGuard<'d, 'a> {
 }
 
 #[cfg(feature = "bt-hci")]
-impl<'d> AtomicController<'d> {
+impl<'d> ControllerAdapter<'d> {
     pub fn new(controller: Ble<'d>) -> Self {
         Self {
             hw_ipcc_ble_cmd_channel: Mutex::new(controller.hw_ipcc_ble_cmd_channel),
@@ -370,23 +370,35 @@ impl<'d> AtomicController<'d> {
         }
     }
 
-    fn make_pkt(
+    async fn read_pkt(
         &self,
-        evt: EvtBox<Ble<'d>>,
-        cc_no_status: bool,
-    ) -> Result<bt_hci::ControllerToHostPacket<'static>, embedded_io::ErrorKind> {
+    ) -> Result<(EvtBox<Ble<'d>>, bt_hci::ControllerToHostPacket<'static>), embedded_io::ErrorKind> {
         use bt_hci::{ControllerToHostPacket, FromHciBytes};
 
-        let buf = unsafe { core::slice::from_raw_parts(evt.serial() as *const _ as *const u8, evt.serial().len()) };
+        let evt: EvtBox<Ble<'d>> = self
+            .ipcc_ble_event_channel
+            .lock()
+            .await
+            .receive(|| unsafe {
+                if let Some(node_ptr) =
+                    critical_section::with(|cs| LinkedListNode::remove_head(cs, EVT_QUEUE.as_mut_ptr()))
+                {
+                    Some(EvtBox::new(node_ptr.cast()))
+                } else {
+                    None
+                }
+            })
+            .await;
 
-        if cc_no_status {
-            self.cc_no_status.store(true, Ordering::Release);
-        }
-        self.pending_evt.borrow().borrow_mut().replace(evt);
+        let serial = evt.serial();
+        let buf = unsafe { core::slice::from_raw_parts(serial as *const _ as *const u8, serial.len()) };
 
-        let (pkt, _) = ControllerToHostPacket::from_hci_bytes(buf).map_err(to_err)?;
-
-        Ok(pkt)
+        Ok((
+            evt,
+            ControllerToHostPacket::from_hci_bytes(buf)
+                .map_err(to_err)
+                .map(|(pkt, _)| pkt)?,
+        ))
     }
 
     async fn read_status(
@@ -443,7 +455,7 @@ impl<'d> AtomicController<'d> {
 }
 
 #[cfg(feature = "bt-hci")]
-impl<'d> bt_hci::controller::Controller for AtomicController<'d> {
+impl<'d> bt_hci::controller::Controller for ControllerAdapter<'d> {
     async fn write_acl_data(&self, packet: &bt_hci::data::AclPacket<'_>) -> Result<(), Self::Error> {
         use bt_hci::WriteHci;
         use bt_hci::transport::WithIndicator;
@@ -479,29 +491,18 @@ impl<'d> bt_hci::controller::Controller for AtomicController<'d> {
                         self.waker.wake();
                     }
 
-                    let evt: EvtBox<Ble<'d>> = self
-                        .ipcc_ble_event_channel
-                        .lock()
-                        .await
-                        .receive(|| unsafe {
-                            if let Some(node_ptr) =
-                                critical_section::with(|cs| LinkedListNode::remove_head(cs, EVT_QUEUE.as_mut_ptr()))
-                            {
-                                Some(EvtBox::new(node_ptr.cast()))
-                            } else {
-                                None
-                            }
-                        })
-                        .await;
-
-                    let (pkt, _) = ControllerToHostPacket::from_hci_bytes(&evt.serial()).map_err(to_err)?;
+                    let (evt, pkt) = self.read_pkt().await?;
 
                     match pkt {
                         ControllerToHostPacket::Event(ref event) => match event.kind {
                             EventKind::CommandComplete => {
                                 let e = CommandComplete::from_hci_bytes_complete(event.data).map_err(to_err)?;
                                 if !e.has_status() {
-                                    return self.make_pkt(evt, true);
+                                    // Store the pending event and block commands until the next read
+                                    self.cc_no_status.store(true, Ordering::Release);
+                                    self.pending_evt.borrow().borrow_mut().replace(evt);
+
+                                    return Ok(pkt);
                                 }
 
                                 self.signal_cmd(e.cmd_opcode, evt);
@@ -514,11 +515,17 @@ impl<'d> bt_hci::controller::Controller for AtomicController<'d> {
                                 continue;
                             }
                             _ => {
-                                return self.make_pkt(evt, false);
+                                // Store the pending event so that it isn't dropped until the next read
+                                self.pending_evt.borrow().borrow_mut().replace(evt);
+
+                                return Ok(pkt);
                             }
                         },
                         _ => {
-                            return self.make_pkt(evt, false);
+                            // Store the pending event so that it isn't dropped until the next read
+                            self.pending_evt.borrow().borrow_mut().replace(evt);
+
+                            return Ok(pkt);
                         }
                     }
                 }
@@ -555,7 +562,7 @@ impl<'d> bt_hci::controller::Controller for AtomicController<'d> {
 }
 
 #[cfg(feature = "bt-hci")]
-impl<'d, C> bt_hci::controller::ControllerCmdSync<C> for AtomicController<'d>
+impl<'d, C> bt_hci::controller::ControllerCmdSync<C> for ControllerAdapter<'d>
 where
     C: bt_hci::cmd::SyncCmd,
 {
@@ -589,7 +596,7 @@ where
 }
 
 #[cfg(feature = "bt-hci")]
-impl<'d, C> bt_hci::controller::ControllerCmdAsync<C> for AtomicController<'d>
+impl<'d, C> bt_hci::controller::ControllerCmdAsync<C> for ControllerAdapter<'d>
 where
     C: bt_hci::cmd::AsyncCmd,
 {
