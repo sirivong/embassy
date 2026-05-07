@@ -22,12 +22,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::blocking_mutex::raw::NoopRawMutex;
 use embassy_sync::zerocopy_channel;
 use stm32_bindings::ble::{BLE_SLEEPMODE_RUNNING, BleStack_Process, BleStack_Request};
-use stm32wb_hci::event::Packet;
-use stm32wb_hci::host::HciHeader;
-use stm32wb_hci::vendor::CommandHeader;
-use stm32wb_hci::{Event, event};
 
-use crate::bluetooth::error::BleError;
 use crate::runner::BLE_INIT;
 use crate::wba::host_if::{MAX_BLE_PKT_SIZE, TASK_BLE_HOST_MASK, TASK_LINK_LAYER_MASK, TASK_PRIO_BLE_HOST};
 use crate::wba::linklayer_plat::{
@@ -142,7 +137,7 @@ impl Controller {
         pka: Option<&'static Mutex<CriticalSectionRawMutex, RefCell<Pka<'static, PkaPeriph>>>>,
         _irq: impl interrupt::typelevel::Binding<interrupt::typelevel::RADIO, HighInterruptHandler>
         + interrupt::typelevel::Binding<interrupt::typelevel::HASH, LowInterruptHandler>,
-    ) -> Result<Self, BleError> {
+    ) -> Result<Self, ()> {
         let state_ptr = state as *mut ControllerState;
         let (sender, receiver) = state.channel.split();
         unsafe {
@@ -160,7 +155,7 @@ impl Controller {
         // which is required before ll_intf_init can work properly.
         init_ble_stack().map_err(|status| {
             error!("BLE stack initialization failed: 0x{:02X}", status);
-            BleError::InitializationFailed
+            ()
         })?;
 
         util_seq::UTIL_SEQ_RegTask(TASK_BLE_HOST_MASK, 0, Some(ble_stack_process_bg));
@@ -224,7 +219,11 @@ impl Controller {
         unsafe { &mut *ptr }
     }
 
-    pub async fn read_event(&mut self) -> Result<Event, event::Error> {
+    #[cfg(feature = "wb-hci")]
+    pub async fn read_event(&mut self) -> Result<stm32wb_hci::Event, stm32wb_hci::event::Error> {
+        use stm32wb_hci::Event;
+        use stm32wb_hci::event::Packet;
+
         if let Some(buf) = self.pop_buf() {
             Event::new(Packet(&buf[1..]))
         } else {
@@ -247,12 +246,16 @@ impl Controller {
     }
 }
 
+#[cfg(feature = "wb-hci")]
 impl stm32wb_hci::Controller for Controller {
     async fn controller_read_into(&mut self, _buf: &mut [u8]) {
         panic!("use `read_event` to read events")
     }
 
     async fn controller_write(&mut self, opcode: stm32wb_hci::Opcode, payload: &[u8]) {
+        use stm32wb_hci::host::HciHeader;
+        use stm32wb_hci::vendor::CommandHeader;
+
         self.exec(|buf| {
             let (header, pkt) = buf.split_at_mut(CommandHeader::HEADER_LENGTH);
 
