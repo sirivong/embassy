@@ -296,17 +296,6 @@ impl<'d> embedded_io::ErrorType for ControllerAdapter<'d> {
 }
 
 #[cfg(feature = "bt-hci")]
-fn to_err(e: bt_hci::FromHciBytesError) -> embedded_io::ErrorKind {
-    use bt_hci::FromHciBytesError;
-    use embedded_io::ErrorKind;
-
-    match e {
-        FromHciBytesError::InvalidSize => ErrorKind::InvalidInput,
-        FromHciBytesError::InvalidValue => ErrorKind::InvalidData,
-    }
-}
-
-#[cfg(feature = "bt-hci")]
 struct SlotGuard<'d, 'a> {
     controller: &'a ControllerAdapter<'d>,
 }
@@ -375,6 +364,8 @@ impl<'d> ControllerAdapter<'d> {
     ) -> Result<(EvtBox<Ble<'d>>, bt_hci::ControllerToHostPacket<'static>), embedded_io::ErrorKind> {
         use bt_hci::{ControllerToHostPacket, FromHciBytes};
 
+        use crate::util::to_err;
+
         let evt: EvtBox<Ble<'d>> = self
             .ipcc_ble_event_channel
             .lock()
@@ -406,10 +397,9 @@ impl<'d> ControllerAdapter<'d> {
         _guard: &SlotGuard<'d, '_>,
     ) -> Result<bt_hci::event::CommandCompleteWithStatus<'_>, bt_hci::cmd::Error<embedded_io::ErrorKind>> {
         use bt_hci::cmd::Error as CmdError;
-        use bt_hci::event::{CommandComplete, CommandCompleteWithStatus, CommandStatus, EventKind};
-        use bt_hci::param::{Error as ParamError, RemainingBytes};
-        use bt_hci::{ControllerToHostPacket, FromHciBytes};
-        use embedded_io::ErrorKind;
+        use bt_hci::param::Error as ParamError;
+
+        use crate::util::make_cc_with_cs;
 
         let evt = self
             .signal
@@ -421,36 +411,7 @@ impl<'d> ControllerAdapter<'d> {
         let evt_serial = evt.serial();
         let evt_serial = unsafe { core::slice::from_raw_parts(evt_serial as *const _ as *const u8, evt_serial.len()) };
 
-        let (pkt, _) = ControllerToHostPacket::from_hci_bytes(evt_serial)
-            .map_err(to_err)
-            .map_err(CmdError::Io)?;
-
-        let ControllerToHostPacket::Event(ref event) = pkt else {
-            return Err(CmdError::Io(ErrorKind::InvalidData));
-        };
-
-        match event.kind {
-            EventKind::CommandComplete => {
-                let e = CommandComplete::from_hci_bytes_complete(event.data)
-                    .map_err(to_err)
-                    .map_err(CmdError::Io)?;
-
-                e.try_into().map_err(to_err).map_err(CmdError::Io)
-            }
-            EventKind::CommandStatus => {
-                let e = CommandStatus::from_hci_bytes_complete(event.data)
-                    .map_err(to_err)
-                    .map_err(CmdError::Io)?;
-
-                Ok(CommandCompleteWithStatus {
-                    num_hci_cmd_pkts: 0,
-                    cmd_opcode: e.cmd_opcode,
-                    status: e.status,
-                    return_param_bytes: RemainingBytes::default(),
-                })
-            }
-            _ => return Err(CmdError::Io(ErrorKind::InvalidData)),
-        }
+        make_cc_with_cs(evt_serial)
     }
 }
 
@@ -481,6 +442,8 @@ impl<'d> bt_hci::controller::Controller for ControllerAdapter<'d> {
         use bt_hci::event::{CommandComplete, CommandStatus, EventKind};
         use bt_hci::{ControllerToHostPacket, FromHciBytes};
         use embassy_futures::select::{Either, select};
+
+        use crate::util::to_err;
 
         match select(
             async {

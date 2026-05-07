@@ -266,13 +266,13 @@ impl stm32wb_hci::Controller for Controller {
 const ERR: bt_hci::cmd::Error<embedded_io::ErrorKind> = bt_hci::cmd::Error::Io(embedded_io::ErrorKind::InvalidData);
 
 #[cfg(feature = "bt-hci")]
-pub struct AtomicController {
+pub struct ControllerAdapter {
     controller: NoopMutex<RefCell<Controller>>,
     pending_evt: AtomicBool,
 }
 
 #[cfg(feature = "bt-hci")]
-impl AtomicController {
+impl ControllerAdapter {
     pub const fn new(controller: Controller) -> Self {
         Self {
             controller: Mutex::const_new(NoopRawMutex::new(), RefCell::new(controller)),
@@ -282,12 +282,12 @@ impl AtomicController {
 }
 
 #[cfg(feature = "bt-hci")]
-impl embedded_io::ErrorType for AtomicController {
+impl embedded_io::ErrorType for ControllerAdapter {
     type Error = embedded_io::ErrorKind;
 }
 
 #[cfg(feature = "bt-hci")]
-impl bt_hci::controller::Controller for AtomicController {
+impl bt_hci::controller::Controller for ControllerAdapter {
     async fn write_acl_data(&self, packet: &bt_hci::data::AclPacket<'_>) -> Result<(), Self::Error> {
         use bt_hci::WriteHci;
         use bt_hci::transport::WithIndicator;
@@ -338,6 +338,7 @@ impl bt_hci::controller::Controller for AtomicController {
 
             self.pending_evt.store(true, Ordering::Release);
 
+            // Optimization depends on the assumption that the event is dropped before read is called again
             Poll::Ready(unsafe { core::slice::from_raw_parts(&slot.0 as *const _ as *const u8, slot.1) })
         })
         .await;
@@ -347,71 +348,52 @@ impl bt_hci::controller::Controller for AtomicController {
 }
 
 #[cfg(feature = "bt-hci")]
-impl<C> bt_hci::controller::ControllerCmdSync<C> for AtomicController
+impl<C> bt_hci::controller::ControllerCmdSync<C> for ControllerAdapter
 where
     C: bt_hci::cmd::SyncCmd,
 {
     async fn exec(&self, cmd: &C) -> Result<C::Return, bt_hci::cmd::Error<Self::Error>> {
-        use bt_hci::event::{CommandComplete, CommandCompleteWithStatus, EventKind};
         use bt_hci::transport::WithIndicator;
-        use bt_hci::{ControllerToHostPacket, FromHciBytes, WriteHci, cmd};
+        use bt_hci::{WriteHci, cmd};
+
+        use crate::util::make_cc_with_cs;
 
         let mut controller = self.controller.borrow().borrow_mut();
 
-        //info!("Executing command with opcode {}", C::OPCODE);
+        debug!("Executing command with opcode {}", C::OPCODE.0);
         controller.exec(|buf| WithIndicator::new(cmd).write_hci(&mut buf[..]).map_err(|_| ERR))?;
 
         let buf = controller.pop_buf().ok_or(ERR)?;
-        let pkt = ControllerToHostPacket::from_hci_bytes_complete(&buf[1..]).map_err(|_| ERR)?;
-
-        let ControllerToHostPacket::Event(ref event) = pkt else {
-            return Err(ERR);
-        };
-
-        if event.kind != EventKind::CommandComplete {
-            return Err(ERR);
-        }
-
-        let e = CommandComplete::from_hci_bytes_complete(event.data).map_err(|_| ERR)?;
-        let e: CommandCompleteWithStatus = e.try_into().map_err(|_| ERR)?;
+        let e = make_cc_with_cs(buf)?;
 
         let r = e.to_result::<C>().map_err(cmd::Error::Hci)?;
-        // info!("Done executing command with opcode {}", C::OPCODE);
+        debug!("Done executing command with opcode {}", C::OPCODE.0);
         Ok(r)
     }
 }
 
 #[cfg(feature = "bt-hci")]
-impl<C> bt_hci::controller::ControllerCmdAsync<C> for AtomicController
+impl<C> bt_hci::controller::ControllerCmdAsync<C> for ControllerAdapter
 where
     C: bt_hci::cmd::AsyncCmd,
 {
     async fn exec(&self, cmd: &C) -> Result<(), bt_hci::cmd::Error<Self::Error>> {
-        use bt_hci::event::{CommandStatus, EventKind};
+        use bt_hci::WriteHci;
         use bt_hci::transport::WithIndicator;
-        use bt_hci::{ControllerToHostPacket, FromHciBytes, WriteHci};
+
+        use crate::util::make_cc_with_cs;
 
         let mut controller = self.controller.borrow().borrow_mut();
 
-        //info!("Executing command with opcode {}", C::OPCODE);
+        debug!("Executing command with opcode {}", C::OPCODE.0);
         controller.exec(|buf| WithIndicator::new(cmd).write_hci(&mut buf[..]).map_err(|_| ERR))?;
 
         let buf = controller.pop_buf().ok_or(ERR)?;
-        let pkt = ControllerToHostPacket::from_hci_bytes_complete(&buf[1..]).map_err(|_| ERR)?;
-
-        let ControllerToHostPacket::Event(ref event) = pkt else {
-            return Err(ERR);
-        };
-
-        if event.kind != EventKind::CommandStatus {
-            return Err(ERR);
-        }
-
-        let e = CommandStatus::from_hci_bytes_complete(event.data).map_err(|_| ERR)?;
+        let e = make_cc_with_cs(buf)?;
 
         e.status.to_result()?;
 
-        // info!("Done executing command with opcode {}", C::OPCODE);
+        debug!("Done executing command with opcode {}", C::OPCODE.0);
         Ok(())
     }
 }
