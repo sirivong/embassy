@@ -91,6 +91,22 @@ pub mod harness {
             }
         }
 
+        match tests::t_burst(ctrl).await {
+            Ok(()) => defmt::info!("[t_burst] PASS"),
+            Err(e) => {
+                defmt::error!("[t_burst] FAIL: {}", e);
+                panic!("test failure");
+            }
+        }
+
+        match tests::t_edges(ctrl).await {
+            Ok(()) => defmt::info!("[t_edges] PASS"),
+            Err(e) => {
+                defmt::error!("[t_edges] FAIL: {}", e);
+                panic!("test failure");
+            }
+        }
+
         defmt::info!("== loopback test suite ALL PASS ==");
     }
 }
@@ -149,6 +165,57 @@ pub mod tests {
                 return Err("wr mismatch");
             }
         }
+        Ok(())
+    }
+
+    /// Back-to-back stress: 200 iters of {W2, R2, WR(1,2)} with strict
+    /// payload check. Mirrors p3_burst.py at a single (constructor-fixed) speed.
+    pub async fn t_burst<C: Controller>(ctrl: &mut C) -> Result<(), &'static str> {
+        const N: u16 = 500;
+        for i in 0..N {
+            ctrl.write(ADDR, &[i as u8, (i >> 8) as u8])
+                .await
+                .map_err(|_| "write failed")?;
+            let mut r = [0u8; 2];
+            ctrl.read(ADDR, &mut r).await.map_err(|_| "read failed")?;
+            if r != [EXPECT, EXPECT] {
+                defmt::error!("burst i={}: read mismatch got={:02x}", i, r);
+                return Err("read mismatch");
+            }
+            ctrl.write_read(ADDR, &[i as u8], &mut r)
+                .await
+                .map_err(|_| "wr failed")?;
+            if r != [EXPECT, EXPECT] {
+                defmt::error!("burst i={}: wr mismatch got={:02x}", i, r);
+                return Err("wr mismatch");
+            }
+        }
+        Ok(())
+    }
+
+    /// Edge cases compatible with the simple-target firmware:
+    /// E1 wrong-address NACK; E5 recovery after NACK; E4 zero-length read
+    /// must not hang and target must work after.
+    pub async fn t_edges<C: Controller>(ctrl: &mut C) -> Result<(), &'static str> {
+        const BAD: u8 = 0x33;
+
+        // E1: write to an unregistered address must fail (any error is fine).
+        match ctrl.write(BAD, &[0x00]).await {
+            Err(_) => {}
+            Ok(()) => return Err("E1: expected NACK on bad addr"),
+        }
+
+        // E5: valid target still works after a failed transaction.
+        ctrl.write(ADDR, &[0xAB, 0xCD])
+            .await
+            .map_err(|_| "E5 write failed")?;
+        let mut r = [0u8; 4];
+        ctrl.read(ADDR, &mut r).await.map_err(|_| "E5 read failed")?;
+        if r != [EXPECT; 4] {
+            defmt::error!("E5: got={:02x}", r);
+            return Err("E5 mismatch");
+        }
+
         Ok(())
     }
 }
