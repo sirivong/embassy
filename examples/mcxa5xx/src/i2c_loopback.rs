@@ -83,6 +83,14 @@ pub mod harness {
             }
         }
 
+        match tests::t_lengths(ctrl).await {
+            Ok(()) => defmt::info!("[t_lengths] PASS"),
+            Err(e) => {
+                defmt::error!("[t_lengths] FAIL: {}", e);
+                panic!("test failure");
+            }
+        }
+
         defmt::info!("== loopback test suite ALL PASS ==");
     }
 }
@@ -104,6 +112,41 @@ pub mod tests {
             if r != [EXPECT, EXPECT] {
                 defmt::error!("iter {}: read mismatch got={:02x}", i, r);
                 return Err("read mismatch");
+            }
+        }
+        Ok(())
+    }
+
+    /// Variable transfer lengths in {1,2,4,8,16,32}. For each length L:
+    /// write L incrementing bytes, read L (expect 0x55), then write_read
+    /// with a (L/2)-byte write + L-byte read (expect 0x55).
+    pub async fn t_lengths<C: Controller>(ctrl: &mut C) -> Result<(), &'static str> {
+        const LENGTHS: &[usize] = &[1, 2, 4, 8, 16, 32];
+        let mut payload = [0u8; 32];
+        for (i, b) in payload.iter_mut().enumerate() {
+            *b = i as u8;
+        }
+        let mut rbuf = [0u8; 32];
+
+        for &l in LENGTHS {
+            ctrl.write(ADDR, &payload[..l])
+                .await
+                .map_err(|_| "write failed")?;
+            let r = &mut rbuf[..l];
+            ctrl.read(ADDR, r).await.map_err(|_| "read failed")?;
+            if r.iter().any(|&b| b != EXPECT) {
+                defmt::error!("L={}: read mismatch got={:02x}", l, r);
+                return Err("read mismatch");
+            }
+
+            let wlen = core::cmp::max(1, l / 2);
+            let r = &mut rbuf[..l];
+            ctrl.write_read(ADDR, &payload[..wlen], r)
+                .await
+                .map_err(|_| "write_read failed")?;
+            if r.iter().any(|&b| b != EXPECT) {
+                defmt::error!("L={} wr({},{}): mismatch got={:02x}", l, wlen, l, r);
+                return Err("wr mismatch");
             }
         }
         Ok(())
