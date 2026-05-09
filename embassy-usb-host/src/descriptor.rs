@@ -449,6 +449,19 @@ impl USBDescriptor for ConfigurationDescriptor {
     }
 }
 
+impl WritableDescriptor for ConfigurationDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        [bytes[2], bytes[3]] = self.total_len.to_le_bytes();
+        bytes[4] = self.num_interfaces;
+        bytes[5] = self.configuration_value;
+        bytes[6] = self.configuration_name;
+        bytes[7] = self.attributes;
+        bytes[8] = self.max_power;
+        Ok(bytes[0] as usize)
+    }
+}
+
 /// A chain of descriptors.
 ///
 /// Holds the current descriptor and a reference to the bytes after the descriptor.
@@ -1074,5 +1087,23 @@ mod test {
             Ok(DeviceDescriptor::MIN_LEN as usize)
         );
         assert_eq!(DeviceDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_configuration_descriptor() {
+        let descriptor = ConfigurationDescriptor {
+            total_len: 0x1122,
+            num_interfaces: 0x33,
+            configuration_value: 0x44,
+            configuration_name: 0x55,
+            attributes: 0x66,
+            max_power: 0x77,
+        };
+        let mut bytes = [0u8; ConfigurationDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(ConfigurationDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(ConfigurationDescriptor::try_from_bytes(&bytes), Ok(descriptor));
     }
 }
