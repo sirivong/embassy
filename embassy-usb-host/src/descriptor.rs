@@ -250,6 +250,36 @@ pub trait VariableSizeDescriptor: USBDescriptor {
     fn match_bytes_len(_bytes: &[u8]) -> bool {
         true
     }
+
+    /// Prepares `bytes` to receive descriptor data.
+    ///
+    /// Fills in the descriptor length and type, and zeroes the rest.
+    ///
+    /// It assumes that `len` matches the additional restrictions of the length.
+    ///
+    /// On success, it returns `Ok(())`.
+    /// On error, it returns a [DescriptorError].
+    #[inline(always)]
+    fn prepare_bytes(bytes: &mut [u8], len: u8) -> Result<(), DescriptorError>
+    where
+        Self: WritableDescriptor,
+    {
+        if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&len) {
+            Err(DescriptorError::BadDescriptorSize)
+        } else if bytes.len() < len as usize {
+            Err(DescriptorError::UnexpectedEndOfBuffer)
+        } else {
+            bytes[0] = len;
+            bytes[1] = Self::DESC_TYPE;
+            if let Some(subtype) = Self::DESC_SUBTYPE {
+                bytes[2] = subtype;
+                bytes[3..len as usize].fill(0);
+            } else {
+                bytes[2..len as usize].fill(0);
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Partial version of [DeviceDescriptor].
