@@ -71,6 +71,17 @@ pub trait USBDescriptor {
         Self: Sized;
 }
 
+/// Writable descriptor.
+///
+/// Implementors of this trait can be written to a byte slice.
+pub trait WritableDescriptor: USBDescriptor {
+    /// Writes this descriptor to the start of the byte buffer `bytes`.
+    ///
+    /// On success, it returns the number of bytes written.
+    /// On failure, it returns a [Self::Error].
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error>;
+}
+
 /// Fixed size descriptor.
 ///
 /// Implementors of this trait only allow the correct size while reading or writing.
