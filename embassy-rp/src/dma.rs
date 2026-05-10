@@ -65,7 +65,7 @@ impl<'d> Channel<'d> {
     }
 
     /// Get the channel number.
-    fn number(&self) -> u8 {
+    pub fn number(&self) -> u8 {
         self.number
     }
 
