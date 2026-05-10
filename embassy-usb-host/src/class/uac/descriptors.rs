@@ -823,56 +823,113 @@ pub enum TerminalType {
     AvcStream,
 }
 
-fn terminal_type_from_u16(terminal_type: u16) -> TerminalType {
-    use TerminalType::*;
+impl From<u16> for TerminalType {
+    fn from(terminal_type: u16) -> TerminalType {
+        use TerminalType::*;
 
-    use crate::class::uac::codes::terminal_type::*;
+        use crate::class::uac::codes::terminal_type::*;
 
-    match terminal_type {
-        usb::UNDEFINED => UsbUndefined,
-        usb::STREAMING => UsbStreaming,
-        usb::VENDOR_SPECIFIC => UsbVendorSpecific,
+        match terminal_type {
+            usb::UNDEFINED => UsbUndefined,
+            usb::STREAMING => UsbStreaming,
+            usb::VENDOR_SPECIFIC => UsbVendorSpecific,
 
-        input::UNDEFINED => InputUndefined,
-        input::MICROPHONE => Microphone,
-        input::DESKTOP_MICROPHONE => DesktopMicrophone,
-        input::PERSONAL_MICROPHONE => PersonalMicrophone,
-        input::OMNI_DIRECTIONAL_MICROPHONE => OmniMicrophone,
-        input::MICROPHONE_ARRAY => MicrophoneArray,
-        input::PROCESSING_MICROPHONE_ARRAY => ProcessingMicrophoneArray,
+            input::UNDEFINED => InputUndefined,
+            input::MICROPHONE => Microphone,
+            input::DESKTOP_MICROPHONE => DesktopMicrophone,
+            input::PERSONAL_MICROPHONE => PersonalMicrophone,
+            input::OMNI_DIRECTIONAL_MICROPHONE => OmniMicrophone,
+            input::MICROPHONE_ARRAY => MicrophoneArray,
+            input::PROCESSING_MICROPHONE_ARRAY => ProcessingMicrophoneArray,
 
-        output::UNDEFINED => OutputUndefined,
-        output::SPEAKER => Speaker,
-        output::HEADPHONES => Headphones,
-        output::HEAD_MOUNTED_DISPLAY_AUDIO => HeadMountedDisplay,
-        output::DESKTOP_SPEAKER => DesktopSpeaker,
-        output::ROOM_SPEAKER => RoomSpeaker,
-        output::COMMUNICATION_SPEAKER => CommunicationSpeaker,
-        output::LOW_FREQUENCY_EFFECTS_SPEAKER => LowFrequencyEffectsSpeaker,
+            output::UNDEFINED => OutputUndefined,
+            output::SPEAKER => Speaker,
+            output::HEADPHONES => Headphones,
+            output::HEAD_MOUNTED_DISPLAY_AUDIO => HeadMountedDisplay,
+            output::DESKTOP_SPEAKER => DesktopSpeaker,
+            output::ROOM_SPEAKER => RoomSpeaker,
+            output::COMMUNICATION_SPEAKER => CommunicationSpeaker,
+            output::LOW_FREQUENCY_EFFECTS_SPEAKER => LowFrequencyEffectsSpeaker,
 
-        bidirectional::UNDEFINED => BiDirectionalUndefined,
-        bidirectional::HANDSET => Handset,
-        bidirectional::HEADSET => Headset,
-        bidirectional::SPEAKERPHONE_NO_ECHO => SpeakerPhone,
-        bidirectional::ECHO_SUPPRESSING_SPEAKERPHONE => EchoSuppressing,
-        bidirectional::ECHO_CANCELING_SPEAKERPHONE => EchoCanceling,
+            bidirectional::UNDEFINED => BiDirectionalUndefined,
+            bidirectional::HANDSET => Handset,
+            bidirectional::HEADSET => Headset,
+            bidirectional::SPEAKERPHONE_NO_ECHO => SpeakerPhone,
+            bidirectional::ECHO_SUPPRESSING_SPEAKERPHONE => EchoSuppressing,
+            bidirectional::ECHO_CANCELING_SPEAKERPHONE => EchoCanceling,
 
-        telephony::UNDEFINED => TelephonyUndefined,
-        telephony::PHONE_LINE => PhoneLine,
-        telephony::TELEPHONE => Telephone,
-        telephony::DOWN_LINE_PHONE => DownLinePhone,
+            telephony::UNDEFINED => TelephonyUndefined,
+            telephony::PHONE_LINE => PhoneLine,
+            telephony::TELEPHONE => Telephone,
+            telephony::DOWN_LINE_PHONE => DownLinePhone,
 
-        external::UNDEFINED => ExternalUndefined,
-        external::ANALOG_CONNECTOR => AnalogConnector,
-        external::DIGITAL_AUDIO_INTERFACE => DigitalAudioInterface,
-        external::LINE_CONNECTOR => LineConnector,
-        external::LEGACY_AUDIO_CONNECTOR => LegacyAudioConnector,
-        external::SPDIF_INTERFACE => SpdifInterface,
-        external::DA_STREAM_1394 => Da1394Stream,
-        external::DV_STREAM_SOUNDTRACK_1394 => DvdAudioStream,
-        external::ADAT_LIGHTPIPE => AvcStream,
+            external::UNDEFINED => ExternalUndefined,
+            external::ANALOG_CONNECTOR => AnalogConnector,
+            external::DIGITAL_AUDIO_INTERFACE => DigitalAudioInterface,
+            external::LINE_CONNECTOR => LineConnector,
+            external::LEGACY_AUDIO_CONNECTOR => LegacyAudioConnector,
+            external::SPDIF_INTERFACE => SpdifInterface,
+            external::DA_STREAM_1394 => Da1394Stream,
+            external::DV_STREAM_SOUNDTRACK_1394 => DvdAudioStream,
+            external::ADAT_LIGHTPIPE => AvcStream,
 
-        _ => Unknown(terminal_type),
+            _ => Unknown(terminal_type),
+        }
+    }
+}
+
+impl From<TerminalType> for u16 {
+    fn from(terminal_type: TerminalType) -> u16 {
+        use TerminalType::*;
+
+        use crate::class::uac::codes::terminal_type::*;
+
+        match terminal_type {
+            UsbUndefined => usb::UNDEFINED,
+            UsbStreaming => usb::STREAMING,
+            UsbVendorSpecific => usb::VENDOR_SPECIFIC,
+
+            InputUndefined => input::UNDEFINED,
+            Microphone => input::MICROPHONE,
+            DesktopMicrophone => input::DESKTOP_MICROPHONE,
+            PersonalMicrophone => input::PERSONAL_MICROPHONE,
+            OmniMicrophone => input::OMNI_DIRECTIONAL_MICROPHONE,
+            MicrophoneArray => input::MICROPHONE_ARRAY,
+            ProcessingMicrophoneArray => input::PROCESSING_MICROPHONE_ARRAY,
+
+            OutputUndefined => output::UNDEFINED,
+            Speaker => output::SPEAKER,
+            Headphones => output::HEADPHONES,
+            HeadMountedDisplay => output::HEAD_MOUNTED_DISPLAY_AUDIO,
+            DesktopSpeaker => output::DESKTOP_SPEAKER,
+            RoomSpeaker => output::ROOM_SPEAKER,
+            CommunicationSpeaker => output::COMMUNICATION_SPEAKER,
+            LowFrequencyEffectsSpeaker => output::LOW_FREQUENCY_EFFECTS_SPEAKER,
+
+            BiDirectionalUndefined => bidirectional::UNDEFINED,
+            Handset => bidirectional::HANDSET,
+            Headset => bidirectional::HEADSET,
+            SpeakerPhone => bidirectional::SPEAKERPHONE_NO_ECHO,
+            EchoSuppressing => bidirectional::ECHO_SUPPRESSING_SPEAKERPHONE,
+            EchoCanceling => bidirectional::ECHO_CANCELING_SPEAKERPHONE,
+
+            TelephonyUndefined => telephony::UNDEFINED,
+            PhoneLine => telephony::PHONE_LINE,
+            Telephone => telephony::TELEPHONE,
+            DownLinePhone => telephony::DOWN_LINE_PHONE,
+
+            ExternalUndefined => external::UNDEFINED,
+            AnalogConnector => external::ANALOG_CONNECTOR,
+            DigitalAudioInterface => external::DIGITAL_AUDIO_INTERFACE,
+            LineConnector => external::LINE_CONNECTOR,
+            LegacyAudioConnector => external::LEGACY_AUDIO_CONNECTOR,
+            SpdifInterface => external::SPDIF_INTERFACE,
+            Da1394Stream => external::DA_STREAM_1394,
+            DvdAudioStream => external::DV_STREAM_SOUNDTRACK_1394,
+            AvcStream => external::ADAT_LIGHTPIPE,
+
+            Unknown(terminal_type) => terminal_type,
+        }
     }
 }
 
@@ -914,7 +971,7 @@ impl USBDescriptor for InputTerminalDescriptor {
         Self::match_bytes(bytes)?;
         Ok(Self {
             terminal_id: bytes[3],
-            terminal_type: terminal_type_from_u16(u16::from_le_bytes([bytes[4], bytes[5]])),
+            terminal_type: TerminalType::from(u16::from_le_bytes([bytes[4], bytes[5]])),
             associated_terminal_id: bytes[6],
             clock_source_id: bytes[7],
             num_channels: bytes[8],
@@ -960,7 +1017,7 @@ impl USBDescriptor for OutputTerminalDescriptor {
         Self::match_bytes(bytes)?;
         Ok(Self {
             terminal_id: bytes[3],
-            terminal_type: terminal_type_from_u16(u16::from_le_bytes([bytes[4], bytes[5]])),
+            terminal_type: TerminalType::from(u16::from_le_bytes([bytes[4], bytes[5]])),
             associated_terminal_id: bytes[6],
             source_id: bytes[7],
             clock_source_id: bytes[8],
@@ -1765,5 +1822,13 @@ mod test {
             Ok(ClockMultiplierDescriptor::MIN_LEN as usize)
         );
         assert_eq!(ClockDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn rountrip_terminal_type() {
+        for value in 0..=u16::MAX {
+            let terminal_type = TerminalType::from(value);
+            assert_eq!(u16::from(terminal_type), value);
+        }
     }
 }
