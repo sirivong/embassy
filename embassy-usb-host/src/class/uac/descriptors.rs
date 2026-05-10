@@ -8,6 +8,7 @@ use crate::descriptor::descriptor_type::{CS_ENDPOINT, CS_INTERFACE, INTERFACE_AS
 use crate::descriptor::{
     ConfigurationDescriptorChain, DescriptorError, DescriptorVisitor, EndpointDescriptor, ExtendableDescriptor,
     InterfaceDescriptor, InterfaceDescriptorChain, StringIndex, USBDescriptor, VariableSizeDescriptor, VisitError,
+    WritableDescriptor,
 };
 
 const MAX_AUDIO_STREAMING_INTERFACES: usize = 16;
@@ -297,6 +298,19 @@ impl USBDescriptor for InterfaceAssociationDescriptor {
             protocol: bytes[6],
             interface_name: bytes[7],
         })
+    }
+}
+
+impl WritableDescriptor for InterfaceAssociationDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[2] = self.first_interface;
+        bytes[3] = self.num_interfaces;
+        bytes[4] = self.class;
+        bytes[5] = self.subclass;
+        bytes[6] = self.protocol;
+        bytes[7] = self.interface_name;
+        Ok(bytes[0] as usize)
     }
 }
 
@@ -1585,5 +1599,23 @@ mod test {
         let audio_interface_collection = AudioInterfaceCollection::try_from_configuration(&descriptor).unwrap();
         // info!("{:#?}", audio_interface_collection);
         assert_eq!(audio_interface_collection, expected);
+    }
+
+    #[test]
+    fn roundtrip_interface_association_descriptor() {
+        let descriptor = InterfaceAssociationDescriptor {
+            first_interface: 0x11,
+            num_interfaces: 0x22,
+            class: 0x33,
+            subclass: 0x44,
+            protocol: 0x55,
+            interface_name: 0x66,
+        };
+        let mut bytes = [0u8; InterfaceAssociationDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(InterfaceAssociationDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(InterfaceAssociationDescriptor::try_from_bytes(&bytes), Ok(descriptor));
     }
 }
