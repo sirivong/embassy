@@ -695,6 +695,15 @@ impl USBDescriptor for TerminalDescriptor {
     }
 }
 
+impl WritableDescriptor for TerminalDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        match self {
+            Self::Input(descriptor) => descriptor.write_to_bytes(bytes),
+            Self::Output(descriptor) => descriptor.write_to_bytes(bytes),
+        }
+    }
+}
+
 impl TerminalDescriptor {
     /// Returns the terminal ID for this descriptor.
     pub fn terminal_id(&self) -> u8 {
@@ -1900,5 +1909,44 @@ mod test {
             Ok(OutputTerminalDescriptor::MIN_LEN as usize)
         );
         assert_eq!(OutputTerminalDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_terminal_descriptor_input() {
+        let descriptor = TerminalDescriptor::Input(InputTerminalDescriptor {
+            terminal_id: 0x11,
+            terminal_type: TerminalType::Microphone,
+            associated_terminal_id: 0x33,
+            clock_source_id: 0x44,
+            num_channels: 0x55,
+            channel_config_bitmap: 0x66778899,
+            channel_names: 0xaa,
+            controls_bitmap: 0xbbcc,
+            terminal_name: 0xdd,
+        });
+        let mut bytes = [0u8; TerminalDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(InputTerminalDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(TerminalDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+    #[test]
+    fn roundtrip_terminal_descriptor_output() {
+        let descriptor = TerminalDescriptor::Output(OutputTerminalDescriptor {
+            terminal_id: 0x11,
+            terminal_type: TerminalType::Speaker,
+            associated_terminal_id: 0x33,
+            source_id: 0x44,
+            clock_source_id: 0x55,
+            controls_bitmap: 0x6677,
+            terminal_name: 0x88,
+        });
+        let mut bytes = [0u8; TerminalDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(OutputTerminalDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(TerminalDescriptor::try_from_bytes(&bytes), Ok(descriptor));
     }
 }
