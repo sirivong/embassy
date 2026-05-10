@@ -147,6 +147,18 @@ fn main() {
         cfgs.enable("sdmmc_uhs");
     }
 
+    // SDMMC DLYB tuning available: chip exposes a `dlybsd` block AND
+    // we have UHS support to actually drive SDR50/SDR104 through it.
+    cfgs.declare("sdmmc_dlyb");
+    let has_dlybsd = METADATA
+        .peripherals
+        .iter()
+        .filter_map(|p| p.registers.as_ref())
+        .any(|r| r.kind == "dlybsd");
+    if has_dlybsd && has_sdmmc_v3 && env::var("CARGO_FEATURE_TIME").is_ok() {
+        cfgs.enable("sdmmc_dlyb");
+    }
+
     // compile a map of peripherals with registers
     let peripheral_map: HashMap<&str, (&Peripheral, &PeripheralRegisters)> = METADATA
         .peripherals
