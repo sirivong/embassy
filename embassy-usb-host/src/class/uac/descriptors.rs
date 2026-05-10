@@ -1249,6 +1249,17 @@ impl USBDescriptor for AudioEndpointDescriptor {
     }
 }
 
+impl WritableDescriptor for AudioEndpointDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[3] = self.attributes_bitmap;
+        bytes[4] = self.controls_bitmap;
+        bytes[5] = self.lock_delay_units;
+        [bytes[6], bytes[7]] = self.lock_delay.to_le_bytes();
+        Ok(bytes[0] as usize)
+    }
+}
+
 /// Enumeration of format type descriptors for different audio formats.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -1948,5 +1959,21 @@ mod test {
             Ok(OutputTerminalDescriptor::MIN_LEN as usize)
         );
         assert_eq!(TerminalDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_audio_endpoint_descriptor() {
+        let descriptor = AudioEndpointDescriptor {
+            attributes_bitmap: 0x11,
+            controls_bitmap: 0x22,
+            lock_delay_units: 0x33,
+            lock_delay: 0x4455,
+        };
+        let mut bytes = [0u8; AudioEndpointDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(AudioEndpointDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(AudioEndpointDescriptor::try_from_bytes(&bytes), Ok(descriptor));
     }
 }
