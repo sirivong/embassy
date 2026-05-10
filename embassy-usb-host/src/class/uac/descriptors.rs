@@ -983,6 +983,22 @@ impl USBDescriptor for InputTerminalDescriptor {
     }
 }
 
+impl WritableDescriptor for InputTerminalDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[3] = self.terminal_id;
+        [bytes[4], bytes[5]] = u16::from(self.terminal_type).to_le_bytes();
+        bytes[6] = self.associated_terminal_id;
+        bytes[7] = self.clock_source_id;
+        bytes[8] = self.num_channels;
+        [bytes[9], bytes[10], bytes[11], bytes[12]] = self.channel_config_bitmap.to_le_bytes();
+        bytes[13] = self.channel_names;
+        [bytes[14], bytes[15]] = self.controls_bitmap.to_le_bytes();
+        bytes[16] = self.terminal_name;
+        Ok(bytes[0] as usize)
+    }
+}
+
 /// Output terminal descriptor for audio output destinations. (USB Audio Devices 2.0 §4.7.2.5)
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -1830,5 +1846,26 @@ mod test {
             let terminal_type = TerminalType::from(value);
             assert_eq!(u16::from(terminal_type), value);
         }
+    }
+
+    #[test]
+    fn roundtrip_input_terminal_descriptor() {
+        let descriptor = InputTerminalDescriptor {
+            terminal_id: 0x11,
+            terminal_type: TerminalType::Microphone,
+            associated_terminal_id: 0x33,
+            clock_source_id: 0x44,
+            num_channels: 0x55,
+            channel_config_bitmap: 0x66778899,
+            channel_names: 0xaa,
+            controls_bitmap: 0xbbcc,
+            terminal_name: 0xdd,
+        };
+        let mut bytes = [0u8; InputTerminalDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(InputTerminalDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(InputTerminalDescriptor::try_from_bytes(&bytes), Ok(descriptor));
     }
 }
