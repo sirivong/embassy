@@ -11,6 +11,7 @@ use embassy_usb_driver::{Direction, EndpointInfo, EndpointType};
 use crate::control::ControlPipeExt;
 use crate::descriptor::{
     DEFAULT_MAX_DESCRIPTOR_SIZE, DescriptorError, InterfaceDescriptor, USBDescriptor, VariableSizeDescriptor,
+    WritableDescriptor,
 };
 use crate::handler::{EnumerationInfo, HandlerEvent, RegisterError};
 
@@ -213,5 +214,39 @@ impl USBDescriptor for HIDDescriptor {
             descriptor_type0: bytes[6],
             descriptor_length0: u16::from_le_bytes([bytes[7], bytes[8]]),
         })
+    }
+}
+
+impl WritableDescriptor for HIDDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        if self.num_descriptors > Self::SUPPORTED_DESCRIPTORS {
+            return Err(DescriptorError::NotImplemented);
+        }
+        Self::prepare_bytes(bytes, 6 + 3 * self.num_descriptors)?;
+        [bytes[2], bytes[3]] = self.bcd_hid.to_le_bytes();
+        bytes[4] = self.country_code;
+        bytes[5] = self.num_descriptors;
+        bytes[6] = self.descriptor_type0;
+        [bytes[7], bytes[8]] = self.descriptor_length0.to_le_bytes();
+        Ok(bytes[0] as usize)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn roundtrip_hid_descriptor() {
+        let descriptor = HIDDescriptor {
+            bcd_hid: 0x1122,
+            country_code: 0x33,
+            num_descriptors: 1,
+            descriptor_type0: 0x55,
+            descriptor_length0: 0x6677,
+        };
+        let mut bytes = [0u8; HIDDescriptor::BUF_SIZE];
+        assert_eq!(descriptor.write_to_bytes(&mut bytes), Ok(6 + 3 * 1));
+        assert_eq!(HIDDescriptor::try_from_bytes(&bytes), Ok(descriptor));
     }
 }
