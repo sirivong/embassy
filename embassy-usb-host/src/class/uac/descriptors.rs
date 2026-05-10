@@ -592,6 +592,22 @@ impl USBDescriptor for ClockSelectorDescriptor {
     }
 }
 
+impl WritableDescriptor for ClockSelectorDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        let num_source_ids = u8::try_from(self.source_ids.len()).map_err(|_| AudioInterfaceError::InvalidDescriptor)?;
+        if num_source_ids > Self::SUPPORTED_SOURCE_IDS {
+            return Err(AudioInterfaceError::InvalidDescriptor);
+        }
+        Self::prepare_bytes(bytes, 7 + num_source_ids)?;
+        bytes[3] = self.clock_id;
+        bytes[4] = num_source_ids;
+        bytes[5..5 + num_source_ids as usize].copy_from_slice(self.source_ids.as_slice());
+        bytes[5 + num_source_ids as usize] = self.controls_bitmap;
+        bytes[6 + num_source_ids as usize] = self.clock_name;
+        Ok(bytes[0] as usize)
+    }
+}
+
 /// Clock multiplier descriptor for frequency multiplication. (USB Audio Devices 2.0 §4.7.2.3)
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -1646,5 +1662,24 @@ mod test {
             Ok(ClockSourceDescriptor::MIN_LEN as usize)
         );
         assert_eq!(ClockSourceDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_clock_selector_descriptor() {
+        for n in 0..ClockSelectorDescriptor::SUPPORTED_SOURCE_IDS {
+            let mut source_ids = Vec::new();
+            for i in 0..n {
+                assert!(source_ids.push(0x22u8 + i).is_ok());
+            }
+            let descriptor = ClockSelectorDescriptor {
+                clock_id: 0x11,
+                source_ids,
+                controls_bitmap: 0x33,
+                clock_name: 0x44,
+            };
+            let mut bytes = [0u8; ClockSelectorDescriptor::BUF_SIZE];
+            assert_eq!(descriptor.write_to_bytes(&mut bytes), Ok(7 + n as usize));
+            assert_eq!(ClockSelectorDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+        }
     }
 }
