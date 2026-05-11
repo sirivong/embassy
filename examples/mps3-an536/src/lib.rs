@@ -104,16 +104,17 @@ impl Board {
         // the atomic flag check above, ensuring no aliasing of GIC register access.
         let mut gic = unsafe { make_gic() };
 
-        defmt::info!("Configure virtual timer interrupts...");
+        defmt::info!("Configure virtual timer interrupts on core 0...");
         gic.set_interrupt_priority(VIRTUAL_TIMER_PPI, Some(0), 0x31).unwrap();
         gic.set_group(VIRTUAL_TIMER_PPI, Some(0), gicv3::Group::Group1NS)
             .unwrap();
         gic.enable_interrupt(VIRTUAL_TIMER_PPI, Some(0), true).unwrap();
 
-        defmt::info!("Enabling interrupts...");
-        unsafe {
-            aarch32_cpu::interrupt::enable();
-        }
+        defmt::info!("Configure virtual timer interrupts on core 1...");
+        gic.set_interrupt_priority(VIRTUAL_TIMER_PPI, Some(1), 0x31).unwrap();
+        gic.set_group(VIRTUAL_TIMER_PPI, Some(1), gicv3::Group::Group1NS)
+            .unwrap();
+        gic.enable_interrupt(VIRTUAL_TIMER_PPI, Some(1), true).unwrap();
 
         // our initialised peripherals
         Some(Board { gic })
@@ -147,11 +148,11 @@ unsafe fn make_gic() -> gicv3::GicV3<'static> {
     // SAFETY: The GICD and GICR base addresses point to valid GICv3 MMIO regions as
     // obtained from the hardware CBAR register. This function is only called once
     // (via Board::new()'s atomic guard), ensuring exclusive ownership of the GIC.
-    let mut gic = unsafe { gicv3::GicV3::new(gicd, gicr_base, 1, false) };
+    let mut gic = unsafe { gicv3::GicV3::new(gicd, gicr_base, 2, false) };
     defmt::info!("Calling gic.setup(0)");
     gic.setup(0);
-    defmt::info!("Setting prio mask");
-    gicv3::GicCpuInterface::set_priority_mask(0xFF);
+    defmt::info!("Calling gic.init_cpu(1)");
+    gic.init_cpu(1);
     defmt::info!("Made a gic...");
 
     gic
@@ -159,7 +160,8 @@ unsafe fn make_gic() -> gicv3::GicV3<'static> {
 
 /// A type for handling a queue of alarms on the EL1 Virtual Timer
 struct Aarch32VirtualTimerQueue {
-    inner: Mutex<CriticalSectionRawMutex, RefCell<Aarch32VirtualTimerQueueInner>>,
+    core0: Mutex<CriticalSectionRawMutex, RefCell<Aarch32VirtualTimerQueueInner>>,
+    core1: Mutex<CriticalSectionRawMutex, RefCell<Aarch32VirtualTimerQueueInner>>,
 }
 
 impl embassy_time_driver::Driver for Aarch32VirtualTimerQueue {
@@ -168,22 +170,42 @@ impl embassy_time_driver::Driver for Aarch32VirtualTimerQueue {
     }
 
     fn schedule_wake(&self, at: u64, waker: &Waker) {
-        defmt::trace!("Scheduling wake at {=u64}", at);
-        critical_section::with(|cs| {
-            let mut inner = self.inner.borrow(cs).borrow_mut();
-            inner.schedule_wake(at, waker);
-        });
+        let cpuid = cpuid();
+        defmt::trace!(
+            "Scheduling wake at {=u64} ({=u64:tus}) on {=u8}",
+            at,
+            (at * 2) / 125,
+            cpuid
+        );
+        if cpuid == 0 {
+            critical_section::with(|cs| {
+                let mut inner = self.core0.borrow(cs).borrow_mut();
+                inner.schedule_wake(at, waker);
+            });
+        } else {
+            critical_section::with(|cs| {
+                let mut inner = self.core1.borrow(cs).borrow_mut();
+                inner.schedule_wake(at, waker);
+            });
+        }
     }
 }
 
 impl Aarch32VirtualTimerQueue {
     /// Call this from the interrupt handler when it goes off
     fn on_irq(&self) {
-        defmt::trace!("Alarm went off");
-        critical_section::with(|cs| {
-            let mut inner = self.inner.borrow(cs).borrow_mut();
-            inner.update_alarm();
-        });
+        defmt::trace!("Alarm went off on {=u8}", cpuid());
+        if cpuid() == 0 {
+            critical_section::with(|cs| {
+                let mut inner = self.core0.borrow(cs).borrow_mut();
+                inner.update_alarm();
+            });
+        } else {
+            critical_section::with(|cs| {
+                let mut inner = self.core1.borrow(cs).borrow_mut();
+                inner.update_alarm();
+            });
+        }
     }
 }
 
@@ -227,9 +249,148 @@ impl Aarch32VirtualTimerQueueInner {
 }
 
 embassy_time_driver::time_driver_impl!(static DRIVER: Aarch32VirtualTimerQueue = Aarch32VirtualTimerQueue {
-    inner: Mutex::new(RefCell::new(
+    core0: Mutex::new(RefCell::new(
+        Aarch32VirtualTimerQueueInner {
+            queue: embassy_time_queue_utils::Queue::new(),
+        }
+    )),
+    core1: Mutex::new(RefCell::new(
         Aarch32VirtualTimerQueueInner {
             queue: embassy_time_queue_utils::Queue::new(),
         }
     ))
 });
+
+/// Default Core 1 entry point
+#[unsafe(no_mangle)]
+pub extern "C" fn default_kmain2() -> ! {
+    loop {
+        aarch32_cpu::asm::wfi();
+    }
+}
+
+/// Release core1 from spin loop
+pub fn start_core1() {
+    let fpga_led = 0xE020_2000 as *mut u32;
+    unsafe {
+        // Activate second core by writing to FPGA LEDs.
+        // We needed a shared register that wasn't in RAM, and this will do.
+        fpga_led.write_volatile(1);
+    }
+}
+
+/// Start-up code for multi-core Armv8-R, as implemented on the MPS3-AN536.
+///
+/// We boot into EL2, set up a stack pointer, init .data on .bss on core0, and
+/// run `kmain` in EL1 on all cores.
+///
+/// # Safety
+///
+/// This function should not be called manually. It should only be called on reset
+/// from the reset vector.
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+#[unsafe(link_section = ".text.startup")]
+pub unsafe extern "C" fn _start() {
+    core::arch::naked_asm!(
+        r#"
+        // Read MPIDR into R0
+        mrc     p15, 0, r0, c0, c0, 5
+        ands    r0, r0, 0xFF
+        bne     core1
+    core0:
+        ldr     pc, =_default_start
+    core1:
+        // LED GPIO register base address
+        ldr     r0, =0xE0202000
+        mov     r1, #0
+    core1_spin:
+        wfe
+        // spin until an LED0 is on. We use the LED because unlike RAM this register resets to a known value.
+        ldr     r2, [r0]  
+        cmp     r1, r2
+        beq     core1_spin
+    core1_released:
+        // now an LED is on, we assume _core1_stack_pointer contains our stack pointer
+        // First we must exit EL2...
+        // Set the HVBAR (for EL2) to _vector_table
+        ldr     r0, =_vector_table
+        mcr     p15, 4, r0, c12, c0, 0
+        // Configure HACTLR to let us enter EL1
+        mrc     p15, 4, r0, c1, c0, 1
+        mov     r1, {hactlr_bits}
+        orr     r0, r0, r1
+        mcr     p15, 4, r0, c1, c0, 1
+        // Program the SPSR - enter system mode (0x1F) in Arm mode with IRQ, FIQ masked
+        mov		r0, {sys_mode}
+        msr		spsr_hyp, r0
+        adr		r0, 1f
+        msr		elr_hyp, r0
+        dsb
+        isb
+        eret
+    1:
+        // Allow VFP coprocessor access
+        mrc     p15, 0, r0, c1, c0, 2
+        orr     r0, r0, #0xF00000
+        mcr     p15, 0, r0, c1, c0, 2
+        // Enable VFP
+        mov     r0, #0x40000000
+        vmsr    fpexc, r0
+        // Set the VBAR (for EL1) to _vector_table. NB: This isn't required on
+        // Armv7-R because that only supports 'low' (default) or 'high'.
+        ldr     r0, =_vector_table
+        mcr     p15, 0, r0, c12, c0, 0
+        // set up our stacks - also switches to SYS mode
+        movs    r0, #1
+        bl      _stack_setup_preallocated
+        // Zero all registers before calling kmain2
+        mov     r0, 0
+        mov     r1, 0
+        mov     r2, 0
+        mov     r3, 0
+        mov     r4, 0
+        mov     r5, 0
+        mov     r6, 0
+        mov     r7, 0
+        mov     r8, 0
+        mov     r9, 0
+        mov     r10, 0
+        mov     r11, 0
+        mov     r12, 0
+        // call our kmain2 for core 1
+        bl      kmain2
+    "#,
+        hactlr_bits = const {
+            aarch32_cpu::register::Hactlr::new_with_raw_value(0)
+                .with_cpuactlr(true)
+                .with_cdbgdci(true)
+                .with_flashifregionr(true)
+                .with_periphpregionr(true)
+                .with_qosr(true)
+                .with_bustimeoutr(true)
+                .with_intmonr(true)
+                .with_err(true)
+                .with_testr1(true)
+                .raw_value()
+        },
+        sys_mode = const {
+            aarch32_cpu::register::Cpsr::new_with_raw_value(0)
+                .with_mode(aarch32_cpu::register::cpsr::ProcessorMode::Sys)
+                .with_i(true)
+                .with_f(true)
+                .raw_value()
+        },
+    )
+}
+
+/// Get the Multi-Processor ID lowest byte (either 0 or 1 on this platform)
+pub fn cpuid() -> u8 {
+    aarch32_cpu::register::Mpidr::read().0 as u8
+}
+
+// defmt logs get a timestamp and a core ID
+//
+// this reads from the local timer for that core, but both cores have the same time because
+// qemu took them out of reset at the same time.
+defmt::timestamp! {"{=u64:us} (Core{=u8})", embassy_time::Instant::now().as_micros(), cpuid() }
