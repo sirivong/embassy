@@ -9,7 +9,7 @@ mod core0 {
     async fn main(spawner: embassy_executor::Spawner) {
         defmt::info!("I am core0::main");
 
-        let mut p = Board::new().unwrap();
+        let _p = Board::new().unwrap();
 
         defmt::info!("Setting prio mask");
         arm_gic::gicv3::GicCpuInterface::set_priority_mask(0xFF);
