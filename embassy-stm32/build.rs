@@ -1374,26 +1374,51 @@ fn main() {
         (("octospi", "NCS"), quote!(crate::ospi::NSSPin)),
         (("octospi", "CLK"), quote!(crate::ospi::SckPin)),
         (("octospi", "NCLK"), quote!(crate::ospi::NckPin)),
-        (("octospim", "P1_IO0"), quote!(crate::ospi::D0Pin)),
-        (("octospim", "P1_IO1"), quote!(crate::ospi::D1Pin)),
-        (("octospim", "P1_IO2"), quote!(crate::ospi::D2Pin)),
-        (("octospim", "P1_IO3"), quote!(crate::ospi::D3Pin)),
-        (("octospim", "P1_IO4"), quote!(crate::ospi::D4Pin)),
-        (("octospim", "P1_IO5"), quote!(crate::ospi::D5Pin)),
-        (("octospim", "P1_IO6"), quote!(crate::ospi::D6Pin)),
-        (("octospim", "P1_IO7"), quote!(crate::ospi::D7Pin)),
+        // when using IOLSRC = IO3-0 (unswapped)
+        (("octospim", "P1_IO0"), quote!(crate::ospi::D0Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
+        (("octospim", "P1_IO1"), quote!(crate::ospi::D1Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
+        (("octospim", "P1_IO2"), quote!(crate::ospi::D2Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
+        (("octospim", "P1_IO3"), quote!(crate::ospi::D3Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
+        // when using IOHSRC = IO7-4 (unswapped)
+        (("octospim", "P1_IO4"), quote!(crate::ospi::D4Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
+        (("octospim", "P1_IO5"), quote!(crate::ospi::D5Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
+        (("octospim", "P1_IO6"), quote!(crate::ospi::D6Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
+        (("octospim", "P1_IO7"), quote!(crate::ospi::D7Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
+        // when using IOLSRC = IO7-4 (swapped)
+        (("octospim", "P1_IO4"), quote!(crate::ospi::D0Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
+        (("octospim", "P1_IO5"), quote!(crate::ospi::D1Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
+        (("octospim", "P1_IO6"), quote!(crate::ospi::D2Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
+        (("octospim", "P1_IO7"), quote!(crate::ospi::D3Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
+        // when using IOHSRC = IO3-0 (swapped)
+        (("octospim", "P1_IO0"), quote!(crate::ospi::D4Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
+        (("octospim", "P1_IO1"), quote!(crate::ospi::D5Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
+        (("octospim", "P1_IO2"), quote!(crate::ospi::D6Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
+        (("octospim", "P1_IO3"), quote!(crate::ospi::D7Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
         (("octospim", "P1_DQS"), quote!(crate::ospi::DQSPin)),
         (("octospim", "P1_NCS"), quote!(crate::ospi::NSSPin)),
         (("octospim", "P1_CLK"), quote!(crate::ospi::SckPin)),
         (("octospim", "P1_NCLK"), quote!(crate::ospi::NckPin)),
-        (("octospim", "P2_IO0"), quote!(crate::ospi::D0Pin)),
-        (("octospim", "P2_IO1"), quote!(crate::ospi::D1Pin)),
-        (("octospim", "P2_IO2"), quote!(crate::ospi::D2Pin)),
-        (("octospim", "P2_IO3"), quote!(crate::ospi::D3Pin)),
-        (("octospim", "P2_IO4"), quote!(crate::ospi::D4Pin)),
-        (("octospim", "P2_IO5"), quote!(crate::ospi::D5Pin)),
-        (("octospim", "P2_IO6"), quote!(crate::ospi::D6Pin)),
-        (("octospim", "P2_IO7"), quote!(crate::ospi::D7Pin)),
+        // when using IOLSRC = IO3-0 (unswapped)
+        (("octospim", "P2_IO0"), quote!(crate::ospi::D0Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
+        (("octospim", "P2_IO1"), quote!(crate::ospi::D1Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
+        (("octospim", "P2_IO2"), quote!(crate::ospi::D2Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
+        (("octospim", "P2_IO3"), quote!(crate::ospi::D3Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
+        // when using IOHSRC = IO7-4 (unswapped)
+        (("octospim", "P2_IO4"), quote!(crate::ospi::D4Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
+        (("octospim", "P2_IO5"), quote!(crate::ospi::D5Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
+        (("octospim", "P2_IO6"), quote!(crate::ospi::D6Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
+        (("octospim", "P2_IO7"), quote!(crate::ospi::D7Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
+        // when using IOLSRC = IO7-4 (swapped)
+        (("octospim", "P2_IO4"), quote!(crate::ospi::D0Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
+        (("octospim", "P2_IO5"), quote!(crate::ospi::D1Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
+        (("octospim", "P2_IO6"), quote!(crate::ospi::D2Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
+        (("octospim", "P2_IO7"), quote!(crate::ospi::D3Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
+        // when using IOHSRC = IO3-0 (swapped)
+        (("octospim", "P2_IO0"), quote!(crate::ospi::D4Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
+        (("octospim", "P2_IO1"), quote!(crate::ospi::D5Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
+        (("octospim", "P2_IO2"), quote!(crate::ospi::D6Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
+        (("octospim", "P2_IO3"), quote!(crate::ospi::D7Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
+
         (("octospim", "P2_DQS"), quote!(crate::ospi::DQSPin)),
         (("octospim", "P2_NCS"), quote!(crate::ospi::NSSPin)),
         (("octospim", "P2_CLK"), quote!(crate::ospi::SckPin)),
@@ -1599,9 +1624,18 @@ fn main() {
                     // Some chips have OCTOSPIM but not OCTOSPI2.
                     if METADATA.peripherals.iter().any(|p| p.name == "OCTOSPI2") {
                         peri = format_ident!("{}", "OCTOSPI2");
-                        g.extend(quote! {
-                            pin_trait_impl!(#tr, #peri, #pin_name, #af);
-                        });
+
+                        if pin.signal.contains("_IO") {
+                            // When we have OCTOSPIx *and* OCTOSPIM, e.g. H735
+                            g.extend(quote! {
+                                ospi_data_pin_trait_impl!(#tr, #peri, #pin_name, #af);
+                            });
+                        } else {
+                            // When we have OCTOSPI without OCTOSPIM, e.g. L552, or this isn't for OCTOSPI
+                            g.extend(quote! {
+                                pin_trait_impl!(#tr, #peri, #pin_name, #af);
+                            });
+                        }
                     }
                     peri = format_ident!("{}", "OCTOSPI1");
                 }
@@ -1686,7 +1720,15 @@ fn main() {
                         quote!()
                     };
 
-                    Some(quote!(pin_trait_impl!(#tr, #peri, #pin_name, #af #not_applicable);))
+                    if p.name == "OCTOSPIM" && pin.signal.contains("_IO") {
+                        Some(quote! {
+                            ospi_data_pin_trait_impl!(#tr, #peri, #pin_name, #af);
+                        })
+                    } else {
+                        Some(quote! {
+                            pin_trait_impl!(#tr, #peri, #pin_name, #af #not_applicable);
+                        })
+                    }
                 };
 
                 g.extend(pin_trait_impl);
