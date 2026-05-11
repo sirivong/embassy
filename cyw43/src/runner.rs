@@ -3,7 +3,7 @@ use core::sync::atomic::Ordering::Relaxed;
 
 use aligned::{A4, Aligned};
 use embassy_futures::select::{Either4, select4};
-use embassy_hal_internal::aligned::AsMutAlignedSlice;
+use embassy_hal_internal::aligned::AsMutAligned;
 use embassy_net_driver_channel as ch;
 use embassy_net_driver_channel::driver::LinkState;
 use embassy_time::Duration;
@@ -808,7 +808,7 @@ impl<'a, BUS: Bus, CHIP: Chip> Runner<'a, BUS, CHIP> {
 
                         trace!("    {:02x}", Bytes(&buf8[..total_len.min(48)]));
 
-                        let _ = wlan_write(&mut self.bus, &mut buf.as_mut_aligned_slice()[..4 + total_len]).await;
+                        let _ = wlan_write(&mut self.bus, &mut buf.as_mut_aligned()[..4 + total_len]).await;
                         packet.tx_done();
                         self.check_status(&mut buf).await;
                     }
@@ -927,7 +927,7 @@ impl<'a, BUS: Bus, CHIP: Chip> Runner<'a, BUS, CHIP> {
 
                     if status & STATUS_F2_PKT_AVAILABLE != 0 {
                         let len = (status & STATUS_F2_PKT_LEN_MASK) >> STATUS_F2_PKT_LEN_SHIFT;
-                        if wlan_read(&mut self.bus, &mut buf.as_mut_aligned_slice()[..len as usize])
+                        if wlan_read(&mut self.bus, &mut buf.as_mut_aligned()[..len as usize])
                             .await
                             .is_err()
                         {
@@ -941,10 +941,7 @@ impl<'a, BUS: Bus, CHIP: Chip> Runner<'a, BUS, CHIP> {
                     }
                 }
                 BusType::Sdio => {
-                    if wlan_read(&mut self.bus, &mut buf.as_mut_aligned_slice()[..4])
-                        .await
-                        .is_err()
-                    {
+                    if wlan_read(&mut self.bus, &mut buf.as_mut_aligned()[..4]).await.is_err() {
                         debug!("failed to read sdio hwtag");
                         break;
                     }
@@ -967,7 +964,7 @@ impl<'a, BUS: Bus, CHIP: Chip> Runner<'a, BUS, CHIP> {
                     if len > INITIAL_READ as usize {
                         if self
                             .bus
-                            .wlan_read(&mut buf.as_mut_aligned_slice()[4..][..len - INITIAL_READ as usize])
+                            .wlan_read(&mut buf.as_mut_aligned()[4..][..len - INITIAL_READ as usize])
                             .await
                             .is_err()
                         {
@@ -1248,6 +1245,6 @@ impl<'a, BUS: Bus, CHIP: Chip> Runner<'a, BUS, CHIP> {
         let total_len = (total_len + 3) & !3; // round up to 4byte,
         trace!("    {:02x}", Bytes(&buf8[..total_len.min(48)]));
 
-        let _ = wlan_write(&mut self.bus, &mut buf.as_mut_aligned_slice()[..4 + total_len]).await;
+        let _ = wlan_write(&mut self.bus, &mut buf.as_mut_aligned()[..4 + total_len]).await;
     }
 }
