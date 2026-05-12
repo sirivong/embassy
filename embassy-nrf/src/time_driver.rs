@@ -246,14 +246,7 @@ impl RtcDriver {
             });
 
             // 5. Wait for SYSCOUNTER readiness
-            r.syscounter(DOMAIN_IDX).active().write(|w| w.set_active(true));
-            loop {
-                let _ = r.syscounter(DOMAIN_IDX).syscounterl().read();
-                if r.syscounter(DOMAIN_IDX).syscounterh().read().busy() == Busy::Ready {
-                    break;
-                }
-            }
-            r.syscounter(DOMAIN_IDX).active().write(|w| w.set_active(false));
+            let _ = syscounter();
 
             // 6. Enable the domain IRQ.
             #[cfg(feature = "_ns")]
