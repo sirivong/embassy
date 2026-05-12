@@ -2237,6 +2237,15 @@ fn main() {
             adc_table.push(row);
         }
 
+        if regs.kind == "dlybsd"
+            && let Some(name) = p.name.strip_prefix("DLYB_")
+            && !peripheral_map.contains_key(name)
+        {
+            // If DLYB_SDMMC1 exists and SDMMC1 does not exist, then skip it
+
+            continue;
+        }
+
         for irq in p.interrupts {
             let row = vec![
                 p.name.to_string(),
