@@ -4,6 +4,12 @@
 #[embassy_executor::main(entry = "aarch32_rt::entry")]
 async fn main(_spawner: embassy_executor::Spawner) -> ! {
     let _p = embassy_mps3_an536_examples::Board::new().unwrap();
+    defmt::info!("Setting prio mask");
+    arm_gic::gicv3::GicCpuInterface::set_priority_mask(0xFF);
+    defmt::info!("Enabling interrupts on Core 0...");
+    unsafe {
+        aarch32_cpu::interrupt::enable();
+    }
     loop {
         defmt::info!("Hello World!");
         embassy_time::Timer::after_secs(1).await;
