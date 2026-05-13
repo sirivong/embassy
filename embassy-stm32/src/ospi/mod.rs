@@ -870,6 +870,40 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
 
 impl<'d, T: Instance> Ospi<'d, T, Blocking> {
     /// Create new blocking OSPI driver for a single spi external chip
+    #[cfg(not(octospim_v1))]
+    pub fn new_blocking_singlespi(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0: Peri<'d, impl D0Pin<T>>,
+        d1: Peri<'d, impl D1Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1, AfType::input(Pull::None)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            None,
+            None,
+            config,
+            OspiWidth::SING,
+            false,
+        )
+    }
+
+    /// Create new blocking OSPI driver for a single spi external chip
+    #[cfg(octospim_v1)]
     pub fn new_blocking_singlespi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -898,16 +932,47 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             config,
             OspiWidth::SING,
             false,
-            #[cfg(octospim_v1)]
             IOL_PGROUP,
-            #[cfg(octospim_v1)]
             None,
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for a dualspi external chip
+    #[cfg(not(octospim_v1))]
+    pub fn new_blocking_dualspi(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0: Peri<'d, impl D0Pin<T>>,
+        d1: Peri<'d, impl D1Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            None,
+            None,
+            config,
+            OspiWidth::DUAL,
+            false,
+        )
+    }
+
+    /// Create new blocking OSPI driver for a dualspi external chip
+    #[cfg(octospim_v1)]
     pub fn new_blocking_dualspi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -936,16 +1001,49 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             config,
             OspiWidth::DUAL,
             false,
-            #[cfg(octospim_v1)]
             IOL_PGROUP,
-            #[cfg(octospim_v1)]
             None,
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for a quadspi external chip
+    #[cfg(not(octospim_v1))]
+    pub fn new_blocking_quadspi(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0: Peri<'d, impl D0Pin<T>>,
+        d1: Peri<'d, impl D1Pin<T>>,
+        d2: Peri<'d, impl D2Pin<T>>,
+        d3: Peri<'d, impl D3Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d3, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            None,
+            None,
+            None,
+            None,
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            None,
+            None,
+            config,
+            OspiWidth::QUAD,
+            false,
+        )
+    }
+
+    /// Create new blocking OSPI driver for a quadspi external chip
+    #[cfg(octospim_v1)]
     pub fn new_blocking_quadspi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -976,16 +1074,53 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             config,
             OspiWidth::QUAD,
             false,
-            #[cfg(octospim_v1)]
             IOL_PGROUP,
-            #[cfg(octospim_v1)]
             None,
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for two quadspi external chips
+    #[cfg(not(octospim_v1))]
+    pub fn new_blocking_dualquadspi(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0_1: Peri<'d, impl D0Pin<T>>,
+        d1_1: Peri<'d, impl D1Pin<T>>,
+        d2_1: Peri<'d, impl D2Pin<T>>,
+        d3_1: Peri<'d, impl D3Pin<T>>,
+        d0_2: Peri<'d, impl D4Pin<T>>,
+        d1_2: Peri<'d, impl D5Pin<T>>,
+        d2_2: Peri<'d, impl D6Pin<T>>,
+        d3_2: Peri<'d, impl D7Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0_1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1_1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d2_1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d3_1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d0_2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1_2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d2_2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d3_2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            None,
+            None,
+            config,
+            OspiWidth::QUAD,
+            true,
+        )
+    }
+
+    /// Create new blocking OSPI driver for two quadspi external chips
+    #[cfg(octospim_v1)]
     pub fn new_blocking_dualquadspi<const IOLSRC1: u8, const IOLSRC2: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -1020,16 +1155,53 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             config,
             OspiWidth::QUAD,
             true,
-            #[cfg(octospim_v1)]
             IOLSRC1,
-            #[cfg(octospim_v1)]
             Some(IOLSRC2),
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for octospi external chips
+    #[cfg(not(octospim_v1))]
+    pub fn new_blocking_octospi(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0: Peri<'d, impl D0Pin<T>>,
+        d1: Peri<'d, impl D1Pin<T>>,
+        d2: Peri<'d, impl D2Pin<T>>,
+        d3: Peri<'d, impl D3Pin<T>>,
+        d4: Peri<'d, impl D4Pin<T>>,
+        d5: Peri<'d, impl D5Pin<T>>,
+        d6: Peri<'d, impl D6Pin<T>>,
+        d7: Peri<'d, impl D7Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d3, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d4, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d5, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d6, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d7, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            None,
+            None,
+            config,
+            OspiWidth::OCTO,
+            false,
+        )
+    }
+
+    /// Create new blocking OSPI driver for octospi external chips
+    #[cfg(octospim_v1)]
     pub fn new_blocking_octospi<const IOL_PGROUP: u8, const IOH_PGROUP: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -1064,16 +1236,54 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             config,
             OspiWidth::OCTO,
             false,
-            #[cfg(octospim_v1)]
             IOL_PGROUP,
-            #[cfg(octospim_v1)]
             Some(IOH_PGROUP),
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for octospi external chips with DQS support
+    #[cfg(not(octospim_v1))]
+    pub fn new_blocking_octospi_with_dqs(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0: Peri<'d, impl D0Pin<T>>,
+        d1: Peri<'d, impl D1Pin<T>>,
+        d2: Peri<'d, impl D2Pin<T>>,
+        d3: Peri<'d, impl D3Pin<T>>,
+        d4: Peri<'d, impl D4Pin<T>>,
+        d5: Peri<'d, impl D5Pin<T>>,
+        d6: Peri<'d, impl D6Pin<T>>,
+        d7: Peri<'d, impl D7Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        dqs: Peri<'d, impl DQSPin<T>>,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d3, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d4, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d5, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d6, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d7, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            new_pin!(dqs, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            None,
+            config,
+            OspiWidth::OCTO,
+            false,
+        )
+    }
+
+    /// Create new blocking OSPI driver for octospi external chips with DQS support
+    #[cfg(octospim_v1)]
     pub fn new_blocking_octospi_with_dqs<const IOL_PGROUP: u8, const IOH_PGROUP: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -1109,11 +1319,8 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             config,
             OspiWidth::OCTO,
             false,
-            #[cfg(octospim_v1)]
             IOL_PGROUP,
-            #[cfg(octospim_v1)]
             Some(IOH_PGROUP),
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1121,6 +1328,42 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
 
 impl<'d, T: Instance> Ospi<'d, T, Async> {
     /// Create new blocking OSPI driver for a single spi external chip
+    #[cfg(not(octospim_v1))]
+    pub fn new_singlespi<D: OctoDma<T>>(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0: Peri<'d, impl D0Pin<T>>,
+        d1: Peri<'d, impl D1Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        dma: Peri<'d, D>,
+        _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1, AfType::input(Pull::None)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            None,
+            new_dma!(dma, _irq),
+            config,
+            OspiWidth::SING,
+            false,
+        )
+    }
+
+    /// Create new blocking OSPI driver for a single spi external chip
+    #[cfg(octospim_v1)]
     pub fn new_singlespi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -1151,16 +1394,49 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             config,
             OspiWidth::SING,
             false,
-            #[cfg(octospim_v1)]
             IOL_PGROUP,
-            #[cfg(octospim_v1)]
             None,
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for a dualspi external chip
+    #[cfg(not(octospim_v1))]
+    pub fn new_dualspi<D: OctoDma<T>>(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0: Peri<'d, impl D0Pin<T>>,
+        d1: Peri<'d, impl D1Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        dma: Peri<'d, D>,
+        _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            None,
+            new_dma!(dma, _irq),
+            config,
+            OspiWidth::DUAL,
+            false,
+        )
+    }
+
+    /// Create new blocking OSPI driver for a dualspi external chip
+    #[cfg(octospim_v1)]
     pub fn new_dualspi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -1191,16 +1467,51 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             config,
             OspiWidth::DUAL,
             false,
-            #[cfg(octospim_v1)]
             IOL_PGROUP,
-            #[cfg(octospim_v1)]
             None,
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for a quadspi external chip
+    #[cfg(not(octospim_v1))]
+    pub fn new_quadspi<D: OctoDma<T>>(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0: Peri<'d, impl D0Pin<T>>,
+        d1: Peri<'d, impl D1Pin<T>>,
+        d2: Peri<'d, impl D2Pin<T>>,
+        d3: Peri<'d, impl D3Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        dma: Peri<'d, D>,
+        _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d3, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            None,
+            None,
+            None,
+            None,
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            None,
+            new_dma!(dma, _irq),
+            config,
+            OspiWidth::QUAD,
+            false,
+        )
+    }
+
+    /// Create new blocking OSPI driver for a quadspi external chip
+    #[cfg(octospim_v1)]
     pub fn new_quadspi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -1233,16 +1544,55 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             config,
             OspiWidth::QUAD,
             false,
-            #[cfg(octospim_v1)]
             IOL_PGROUP,
-            #[cfg(octospim_v1)]
             None,
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for two quadspi external chips
+    #[cfg(not(octospim_v1))]
+    pub fn new_dualquadspi<D: OctoDma<T>>(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0_1: Peri<'d, impl D0Pin<T>>,
+        d1_1: Peri<'d, impl D1Pin<T>>,
+        d2_1: Peri<'d, impl D2Pin<T>>,
+        d3_1: Peri<'d, impl D3Pin<T>>,
+        d0_2: Peri<'d, impl D4Pin<T>>,
+        d1_2: Peri<'d, impl D5Pin<T>>,
+        d2_2: Peri<'d, impl D6Pin<T>>,
+        d3_2: Peri<'d, impl D7Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        dma: Peri<'d, D>,
+        _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0_1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1_1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d2_1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d3_1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d0_2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1_2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d2_2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d3_2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            None,
+            new_dma!(dma, _irq),
+            config,
+            OspiWidth::QUAD,
+            true,
+        )
+    }
+
+    /// Create new blocking OSPI driver for two quadspi external chips
+    #[cfg(octospim_v1)]
     pub fn new_dualquadspi<const IOLSRC1: u8, const CTRL_PGROUP: u8, const IOLSRC2: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -1279,16 +1629,55 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             config,
             OspiWidth::QUAD,
             true,
-            #[cfg(octospim_v1)]
             IOLSRC1,
-            #[cfg(octospim_v1)]
             Some(IOLSRC2),
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for octospi external chips
+    #[cfg(not(octospim_v1))]
+    pub fn new_octospi<D: OctoDma<T>>(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0: Peri<'d, impl D0Pin<T>>,
+        d1: Peri<'d, impl D1Pin<T>>,
+        d2: Peri<'d, impl D2Pin<T>>,
+        d3: Peri<'d, impl D3Pin<T>>,
+        d4: Peri<'d, impl D4Pin<T>>,
+        d5: Peri<'d, impl D5Pin<T>>,
+        d6: Peri<'d, impl D6Pin<T>>,
+        d7: Peri<'d, impl D7Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        dma: Peri<'d, D>,
+        _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d3, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d4, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d5, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d6, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d7, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            None,
+            new_dma!(dma, _irq),
+            config,
+            OspiWidth::OCTO,
+            false,
+        )
+    }
+
+    /// Create new blocking OSPI driver for octospi external chips
+    #[cfg(octospim_v1)]
     pub fn new_octospi<const IOL_PGROUP: u8, const IOH_PGROUP: u8, const CTRL_PGROUP: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -1325,16 +1714,56 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             config,
             OspiWidth::OCTO,
             false,
-            #[cfg(octospim_v1)]
             IOL_PGROUP,
-            #[cfg(octospim_v1)]
             Some(IOH_PGROUP),
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for octospi external chips with DQS support
+    #[cfg(not(octospim_v1))]
+    pub fn new_octospi_with_dqs<D: OctoDma<T>>(
+        peri: Peri<'d, T>,
+        sck: Peri<'d, impl SckPin<T>>,
+        d0: Peri<'d, impl D0Pin<T>>,
+        d1: Peri<'d, impl D1Pin<T>>,
+        d2: Peri<'d, impl D2Pin<T>>,
+        d3: Peri<'d, impl D3Pin<T>>,
+        d4: Peri<'d, impl D4Pin<T>>,
+        d5: Peri<'d, impl D5Pin<T>>,
+        d6: Peri<'d, impl D6Pin<T>>,
+        d7: Peri<'d, impl D7Pin<T>>,
+        nss: Peri<'d, impl NSSPin<T>>,
+        dqs: Peri<'d, impl DQSPin<T>>,
+        dma: Peri<'d, D>,
+        _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
+        config: Config,
+    ) -> Self {
+        Self::new_inner(
+            peri,
+            new_pin!(d0, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d1, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d2, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d3, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d4, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d5, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d6, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(d7, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(sck, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_pin!(
+                nss,
+                AfType::output_pull(OutputType::PushPull, Speed::VeryHigh, Pull::Up)
+            ),
+            new_pin!(dqs, AfType::output(OutputType::PushPull, Speed::VeryHigh)),
+            new_dma!(dma, _irq),
+            config,
+            OspiWidth::OCTO,
+            false,
+        )
+    }
+
+    /// Create new blocking OSPI driver for octospi external chips with DQS support
+    #[cfg(octospim_v1)]
     pub fn new_octospi_with_dqs<const IOL_PGROUP: u8, const IOH_PGROUP: u8, const CTRL_PGROUP: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
         sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
@@ -1372,11 +1801,8 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             config,
             OspiWidth::OCTO,
             false,
-            #[cfg(octospim_v1)]
             IOL_PGROUP,
-            #[cfg(octospim_v1)]
             Some(IOH_PGROUP),
-            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
