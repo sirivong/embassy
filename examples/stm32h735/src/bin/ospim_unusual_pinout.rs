@@ -1,7 +1,49 @@
 #![no_main]
 #![no_std]
 
-// Tested on weact stm32h7b0 board + w25q64 spi flash
+/// Demonstrates how unusual OCTOSPI pinouts can be used and that OCTOSPIM can be used in unusual ways.
+///
+/// This was the driving demo for testing changes to the embassy-stm32/src/ospi/mod.rs file that improved OCTOSPIM support.
+///
+/// Tested on a MakerPnPControl-CORE board (Rev A1) - https://github.com/MakerPnP/makerpnp-control-board
+/// Important: Disconnect the CORE board from BASE board before running, as this uses pins on the IO connectors
+///
+/// Expected output:
+/// ```
+/// 0.000000 [INFO ] START (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:19)
+/// 0.000000 [TRACE] rcc: enabled 0x3d:1 (embassy_stm32 src/rcc/mod.rs:354)
+/// 0.000000 [DEBUG] flash: latency=3 wrhighfreq=3 (embassy_stm32 src/rcc/h.rs:1258)
+/// 0.000000 [TRACE] BDCR ok: 00008200 (embassy_stm32 src/rcc/bd.rs:307)
+/// 0.000000 [DEBUG] rcc: Clocks { csi: MaybeHertz(0), hclk1: MaybeHertz(275000000), hclk2: MaybeHertz(275000000), hclk3: MaybeHertz(275000000), hclk4: MaybeHertz(275000000), hse: MaybeHertz(50000000), hsi: MaybeHertz(0), hsi48: MaybeHertz(48000000), i2s_ckin: MaybeHertz(0), lse: MaybeHertz(0), lsi: MaybeHertz(0), pclk1: MaybeHertz(137500000), pclk1_tim: MaybeHertz(275000000), pclk2: MaybeHertz(137500000), pclk2_tim: MaybeHertz(275000000), pclk3: MaybeHertz(137500000), pclk4: MaybeHertz(137500000), pll1_q: MaybeHertz(137500000), pll2_p: MaybeHertz(80000000), pll2_q: MaybeHertz(200000000), pll2_r: MaybeHertz(133333333), pll3_p: MaybeHertz(192000000), pll3_q: MaybeHertz(24000000), pll3_r: MaybeHertz(48000000), rtc: MaybeHertz(32000), sys: MaybeHertz(550000000) } (embassy_stm32 src/rcc/mod.rs:92)
+/// 0.000000 [TRACE] rcc: enabled 0x3a:0 (embassy_stm32 src/rcc/mod.rs:354)
+/// 0.000000 [INFO ] Hold FPGA in reset (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:31)
+/// 0.000000 [INFO ] OCTOSPI_IDX: 2 (embassy_stm32 src/ospi/mod.rs:459)
+/// 0.000000 [INFO ] IOL_PGROUP: 0b01 (embassy_stm32 src/ospi/mod.rs:463)
+/// 0.000030 [INFO ] IOH_PGROUP: N/A (embassy_stm32 src/ospi/mod.rs:467)
+/// 0.000030 [INFO ] CLK/NCS/DQS CTRL_PGROUP: 0b10 (embassy_stm32 src/ospi/mod.rs:469)
+/// 0.000030 [INFO ] OCTOSPI1_ENABLED: false, OCTOSPI2_ENABLED: false (embassy_stm32 src/ospi/mod.rs:480)
+/// 0.000061 [INFO ] OCTOSPIM_CR: 0x00FF0000 - Cr { muxen: false, req2ack_time: 255 } (embassy_stm32 src/ospi/mod.rs:502)
+/// 0.000061 [INFO ] OCTOSPIM_P1CR: 0x05010111 - P1cr { clken: true, clksrc: false, dqsen: true, dqssrc: false, ncsen: true, ncssrc: false, iolen: true, iolsrc: 0, iohen: true, iohsrc: 2 } (embassy_stm32 src/ospi/mod.rs:503)
+/// 0.000091 [INFO ] OCTOSPIM_P2CR: 0x07050323 - P2cr { clken: true, clksrc: true, dqsen: false, dqssrc: true, ncsen: true, ncssrc: true, iolen: true, iolsrc: 2, iohen: true, iohsrc: 3 } (embassy_stm32 src/ospi/mod.rs:504)
+/// 0.000122 [TRACE] rcc: enabled 0x35:19 (embassy_stm32 src/rcc/mod.rs:354)
+/// 0.000152 [INFO ] OCTOSPI_IDX: 1 (embassy_stm32 src/ospi/mod.rs:459)
+/// 0.000152 [INFO ] IOL_PGROUP: 0b11 (embassy_stm32 src/ospi/mod.rs:463)
+/// 0.000183 [INFO ] IOH_PGROUP: 0b10 (embassy_stm32 src/ospi/mod.rs:465)
+/// 0.000183 [INFO ] CLK/NCS/DQS CTRL_PGROUP: 0b00 (embassy_stm32 src/ospi/mod.rs:469)
+/// 0.000183 [INFO ] OCTOSPI1_ENABLED: false, OCTOSPI2_ENABLED: true (embassy_stm32 src/ospi/mod.rs:480)
+/// 0.000213 [INFO ] OCTOSPIM_CR: 0x00FF0000 - Cr { muxen: false, req2ack_time: 255 } (embassy_stm32 src/ospi/mod.rs:502)
+/// 0.000213 [INFO ] OCTOSPIM_P1CR: 0x05010111 - P1cr { clken: true, clksrc: false, dqsen: true, dqssrc: false, ncsen: true, ncssrc: false, iolen: true, iolsrc: 0, iohen: true, iohsrc: 2 } (embassy_stm32 src/ospi/mod.rs:503)
+/// 0.000244 [INFO ] OCTOSPIM_P2CR: 0x01030323 - P2cr { clken: true, clksrc: true, dqsen: false, dqssrc: true, ncsen: true, ncssrc: true, iolen: true, iolsrc: 1, iohen: true, iohsrc: 0 } (embassy_stm32 src/ospi/mod.rs:504)
+/// 0.000274 [TRACE] rcc: enabled 0x35:14 (embassy_stm32 src/rcc/mod.rs:354)
+/// 0.010314 [INFO ] FLASH ID: [ef, 40, 15] (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:95)
+/// 0.010314 [INFO ] Flash ID OK (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:103)
+/// ...
+/// 1.911010 [INFO ] FLASH ID: [ef, 40, 15] (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:95)
+/// 1.911010 [INFO ] Flash ID OK (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:103)
+/// 2.011047 [INFO ] Result Attempts: 20, Successes: 20 (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:113)
+/// 2.011047 [INFO ] END (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:114)
+/// ```
+
 
 use defmt::info;
 use embassy_executor::Spawner;
@@ -23,7 +65,6 @@ async fn main(_spawner: Spawner) {
 
     // Output pin PA8 (also MCO)
     let mut led = Output::new(p.PA8, Level::Low, Speed::Low);
-    led.set_high();
 
     // on the test board, there is an FPGA connected to the OCTOSPI data lines so that the FPGA
     // can boot from the flash, with an unprogrammed FPGA it will have weak pull-ups on every IO pin
@@ -51,7 +92,7 @@ async fn main(_spawner: Spawner) {
         refresh: 0,
     };
 
-    let ospi = embassy_stm32::ospi::Ospi::new_blocking_quadspi(
+    let ospi2 = embassy_stm32::ospi::Ospi::new_blocking_quadspi(
         p.OCTOSPI2,
         p.PF4, // P2_CLK
         p.PD4, // P1_IO4
@@ -62,18 +103,57 @@ async fn main(_spawner: Spawner) {
         ospi_config,
     );
 
-    let mut flash = FlashMemory::new(ospi).await;
+    // we init `ospi1` after the one we want to use for the flash so that we can be sure it doesn't
+    // mess-up the OCTOSPIM configuration needed for the flash.
 
-    loop {
+    #[allow(unused_variables)]
+    let ospi1 = embassy_stm32::ospi::Ospi::new_blocking_octospi_with_dqs(
+        p.OCTOSPI1,
+        p.PF10, // P1_CLK
+        p.PG0, // P2_IO4
+        p.PG1, // P2_IO5
+        p.PG10, // P2_IO6
+        p.PG11, // P2_IO7
+        p.PF0, // P2_IO0
+        p.PF1, // P2_IO1
+        p.PF2, // P2_IO2
+        p.PF3, // P2_IO3
+        p.PC11, // P1_NCS
+        p.PA1, // P1_DQS
+        ospi_config,
+    );
+
+    // settling time, without this the flash doesn't respond on a warm-boot, it may require reset commands to be sent.
+    Timer::after_millis(10).await;
+
+    let mut flash = FlashMemory::new(ospi2).await;
+
+    let mut successes = 0;
+    const ATTEMPTS: u32 = 20;
+
+    for _ in 0..ATTEMPTS {
+
         let flash_id = flash.read_id();
         info!("FLASH ID: {=[u8]:x}", flash_id);
+
+        // Flash chip is a 16MBit W25Q16JV-IQ (W25Q16JVUXIQ)
+        // expected output is:
+        // 0FLASH ID: [ef, 40, 15] (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:86)
+
+        if flash_id == [0xEF, 0x40, 0x15] {
+            successes += 1;
+            info!("Flash ID OK");
+        } else {
+            info!("Flash ID mismatch: {=[u8]:x}", flash_id);
+        }
 
         led.toggle();
 
         Timer::after_millis(100).await;
     }
 
-    // Flash chip is a 16MBit W25Q16JV-IQ (W25Q16JVUXIQ)
+    info!("Result Attempts: {}, Successes: {}", ATTEMPTS, successes);
+    info!("END");
 }
 
 const CMD_READ_ID: u8 = 0x9F;
