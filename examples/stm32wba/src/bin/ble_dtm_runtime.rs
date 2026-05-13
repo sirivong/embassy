@@ -76,6 +76,7 @@ async fn main(spawner: Spawner) {
         use embassy_stm32::rcc::*;
         config.rcc.hse = Some(Hse {
             prescaler: HsePrescaler::Div1,
+            trim: None,
         });
         config.rcc.ls = LsConfig {
             rtc: RtcClockSource::Lse,
@@ -103,15 +104,10 @@ async fn main(spawner: Spawner) {
         config.rcc.voltage_scale = VoltageScale::Range1;
         config.rcc.sys = Sysclk::Pll1R;
         config.rcc.mux.rngsel = mux::Rngsel::Hsi;
+        config.rcc.mux.radiostsel = mux::Radiostsel::Lse;
     }
 
     let p = embassy_stm32::init(config);
-
-    {
-        use embassy_stm32::pac::RCC;
-        use embassy_stm32::pac::rcc::vals::Radiostsel;
-        RCC.bdcr().modify(|w| w.set_radiostsel(Radiostsel::Lse));
-    }
 
     info!("Embassy STM32WBA BLE DTM Runtime Example");
 

@@ -21,6 +21,7 @@ pub const HSE_FREQ: Hertz = Hertz(32_000_000);
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Hse {
     pub prescaler: HsePrescaler,
+    pub trim: Option<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -190,6 +191,10 @@ pub(crate) unsafe fn init(config: Config) {
             w.set_hsepre(hse.prescaler);
         });
         while !RCC.cr().read().hserdy() {}
+
+        hse.trim.map(|trim| {
+            RCC.ecscr1().modify(|w| w.set_hsetrim(trim));
+        });
 
         HSE_FREQ
     });

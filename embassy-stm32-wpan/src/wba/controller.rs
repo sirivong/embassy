@@ -152,7 +152,7 @@ impl<'d, T: Runtime> Controller<'d, T> {
         util_seq::seq_resume();
 
         // Run the sequencer once more to process any LL events from the enable
-        util_seq::UTIL_SEQ_SetTask(TASK_LINK_LAYER_MASK, 0);
+        util_seq::UTIL_SEQ_ResumeTask(TASK_LINK_LAYER_MASK);
         util_seq::seq_resume();
 
         // Wake the runner

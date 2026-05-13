@@ -62,6 +62,7 @@ async fn main(spawner: Spawner) {
     // Enable HSE (32 MHz external crystal) - REQUIRED for BLE radio
     config.rcc.hse = Some(Hse {
         prescaler: HsePrescaler::Div1,
+        trim: Some(0x0C),
     });
 
     // Enable LSE (32.768 kHz external crystal) - REQUIRED for BLE radio sleep timer
@@ -93,20 +94,12 @@ async fn main(spawner: Spawner) {
     config.rcc.ahb5_pre = AHB5Prescaler::Div4;
     config.rcc.voltage_scale = VoltageScale::Range1;
     config.rcc.sys = Sysclk::Pll1R;
+    config.rcc.mux.radiostsel = mux::Radiostsel::Lse;
 
     // Configure RNG clock source to HSI (required for WBA)
     config.rcc.mux.rngsel = mux::Rngsel::Hsi;
 
     let p = embassy_stm32::init(config);
-
-    // Apply HSE trimming for accurate radio frequency (matching ST's Config_HSE)
-    // and configure radio sleep timer to use LSE
-    {
-        use embassy_stm32::pac::RCC;
-        use embassy_stm32::pac::rcc::vals::Radiostsel;
-        RCC.ecscr1().modify(|w| w.set_hsetrim(0x0C));
-        RCC.bdcr().modify(|w| w.set_radiostsel(Radiostsel::Lse));
-    }
 
     info!("Embassy STM32WBA6 BLE Advertiser Example");
 

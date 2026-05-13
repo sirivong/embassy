@@ -63,6 +63,7 @@ async fn main(spawner: Spawner) {
     // Enable HSE (32 MHz external crystal) - REQUIRED for BLE radio
     config.rcc.hse = Some(Hse {
         prescaler: HsePrescaler::Div1,
+        trim: Some(0x0C),
     });
 
     // Enable LSE (32.768 kHz external crystal) - REQUIRED for BLE radio sleep timer
@@ -96,18 +97,10 @@ async fn main(spawner: Spawner) {
     config.rcc.voltage_scale = VoltageScale::Range1;
     config.rcc.sys = Sysclk::Pll1R;
     config.rcc.mux.rngsel = mux::Rngsel::Hsi; // RNG can still use HSI
+    config.rcc.mux.radiostsel = mux::Radiostsel::Lse;
 
     let p = embassy_stm32::init(config);
     info!("Embassy STM32WBA6 BLE Peripheral Connection Example");
-
-    // Apply HSE trimming for accurate radio frequency (matching ST's Config_HSE)
-    // and configure radio sleep timer to use LSE
-    {
-        use embassy_stm32::pac::RCC;
-        use embassy_stm32::pac::rcc::vals::Radiostsel;
-        RCC.ecscr1().modify(|w| w.set_hsetrim(0x0C));
-        RCC.bdcr().modify(|w| w.set_radiostsel(Radiostsel::Lse));
-    }
 
     // Initialize hardware peripherals required by BLE stack
     let (platform, runtime) = new_platform!(

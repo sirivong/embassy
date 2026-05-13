@@ -62,6 +62,7 @@ async fn main(spawner: Spawner) {
     // Enable HSE (32 MHz external crystal) - REQUIRED for BLE radio
     config.rcc.hse = Some(Hse {
         prescaler: HsePrescaler::Div1,
+        trim: None,
     });
 
     // Enable LSE (32.768 kHz external crystal) - REQUIRED for BLE radio sleep timer
@@ -94,15 +95,9 @@ async fn main(spawner: Spawner) {
     config.rcc.voltage_scale = VoltageScale::Range1;
     config.rcc.sys = Sysclk::Pll1R;
     config.rcc.mux.rngsel = mux::Rngsel::Hsi;
+    config.rcc.mux.radiostsel = mux::Radiostsel::Lse;
 
     let p = embassy_stm32::init(config);
-
-    // Configure radio sleep timer to use LSE
-    {
-        use embassy_stm32::pac::RCC;
-        use embassy_stm32::pac::rcc::vals::Radiostsel;
-        RCC.bdcr().modify(|w| w.set_radiostsel(Radiostsel::Lse));
-    }
 
     info!("Embassy STM32WBA BLE Advertiser Example");
 
