@@ -1569,6 +1569,7 @@ pub trait Instance: SealedInstance + PeripheralType + RccPeripheral + SealedOcto
 #[allow(private_bounds)]
 pub trait Instance: SealedInstance + PeripheralType + RccPeripheral {}
 
+#[cfg(octospim_v1)]
 macro_rules! ospi_signal_src_trait {
     ($signal:ident) => {
         #[doc = concat!(stringify!($signal), " pin trait")]
@@ -1584,6 +1585,7 @@ macro_rules! ospi_signal_src_trait {
     };
 }
 
+#[cfg(octospim_v1)]
 macro_rules! ospi_signal_src_trait_impl {
     (crate::ospi::$trait:ident<$src:tt>, $instance:ident, $pin:ident, $af:expr) => {
         #[cfg(afio)]
@@ -1604,34 +1606,37 @@ macro_rules! ospi_signal_src_trait_impl {
 
 dma_trait!(OctoDma, Instance);
 
-// pins when NOT using OCTOSPIM
-pin_trait!(SckPin, Instance);
-pin_trait!(NckPin, Instance);
-pin_trait!(DQSPin, Instance);
-pin_trait!(NSSPin, Instance);
-pin_trait!(D0Pin, Instance);
-pin_trait!(D1Pin, Instance);
-pin_trait!(D2Pin, Instance);
-pin_trait!(D3Pin, Instance);
-pin_trait!(D4Pin, Instance);
-pin_trait!(D5Pin, Instance);
-pin_trait!(D6Pin, Instance);
-pin_trait!(D7Pin, Instance);
-
-// signal sources when using OCTOSPIM
-ospi_signal_src_trait!(SckSrc);
-ospi_signal_src_trait!(NckSrc);
-ospi_signal_src_trait!(DQSSrc);
-ospi_signal_src_trait!(NSSSrc);
-
-ospi_signal_src_trait!(D0Src);
-ospi_signal_src_trait!(D1Src);
-ospi_signal_src_trait!(D2Src);
-ospi_signal_src_trait!(D3Src);
-ospi_signal_src_trait!(D4Src);
-ospi_signal_src_trait!(D5Src);
-ospi_signal_src_trait!(D6Src);
-ospi_signal_src_trait!(D7Src);
+cfg_if::cfg_if! {
+    if #[cfg(octospim_v1)] {
+        // signal sources when using OCTOSPIM
+        ospi_signal_src_trait!(SckSrc);
+        ospi_signal_src_trait!(NckSrc);
+        ospi_signal_src_trait!(DQSSrc);
+        ospi_signal_src_trait!(NSSSrc);
+        ospi_signal_src_trait!(D0Src);
+        ospi_signal_src_trait!(D1Src);
+        ospi_signal_src_trait!(D2Src);
+        ospi_signal_src_trait!(D3Src);
+        ospi_signal_src_trait!(D4Src);
+        ospi_signal_src_trait!(D5Src);
+        ospi_signal_src_trait!(D6Src);
+        ospi_signal_src_trait!(D7Src);
+    } else {
+        // pins when NOT using OCTOSPIM
+        pin_trait!(SckPin, Instance);
+        pin_trait!(NckPin, Instance);
+        pin_trait!(DQSPin, Instance);
+        pin_trait!(NSSPin, Instance);
+        pin_trait!(D0Pin, Instance);
+        pin_trait!(D1Pin, Instance);
+        pin_trait!(D2Pin, Instance);
+        pin_trait!(D3Pin, Instance);
+        pin_trait!(D4Pin, Instance);
+        pin_trait!(D5Pin, Instance);
+        pin_trait!(D6Pin, Instance);
+        pin_trait!(D7Pin, Instance);
+    }
+}
 
 // Hard-coded the octospi index, for OCTOSPIM
 #[cfg(octospim_v1)]
