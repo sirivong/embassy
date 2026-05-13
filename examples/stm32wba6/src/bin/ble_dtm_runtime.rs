@@ -23,6 +23,7 @@ use embassy_stm32::exti::ExtiInput;
 use embassy_stm32::gpio::Pull;
 use embassy_stm32::peripherals::{AES as AesPeriph, PKA as PkaPeriph, RNG};
 use embassy_stm32::pka::{self, Pka};
+use embassy_stm32::rcc::Config as RccConfig;
 use embassy_stm32::rng::{self, Rng};
 use embassy_stm32::{Config, bind_interrupts, exti, interrupt};
 use embassy_stm32_wpan::bluetooth::gap::{AdvData, AdvParams, AdvType, GapEvent};
@@ -71,50 +72,7 @@ async fn ble_runner_task(platform: &'static Platform) {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let mut config = Config::default();
-    {
-        use embassy_stm32::rcc::*;
-        use embassy_stm32::time::Hertz;
-
-        // Enable HSE (32 MHz external crystal) - REQUIRED for BLE radio
-        config.rcc.hse = Some(Hse {
-            prescaler: HsePrescaler::Div1,
-            trim: Some(0x0C),
-        });
-
-        // Enable LSE (32.768 kHz external crystal) - REQUIRED for BLE radio sleep timer
-        config.rcc.ls = LsConfig {
-            rtc: RtcClockSource::Lse,
-            lsi: false,
-            lse: Some(LseConfig {
-                frequency: Hertz(32_768),
-                mode: LseMode::Oscillator(LseDrive::MediumLow),
-                peripherals_clocked: true,
-            }),
-        };
-
-        // Configure PLL1 from HSE for system clock
-        // HSE = 32MHz (fixed for WBA), prediv /2 gives 16MHz to PLL input (must be 4-16MHz)
-        // VCO = 16MHz * 12 = 192MHz, PLLR = 192 / 2 = 96MHz system clock
-        config.rcc.pll1 = Some(Pll {
-            source: PllSource::Hse,
-            prediv: PllPreDiv::Div2,  // 32MHz / 2 = 16MHz to PLL input
-            mul: PllMul::Mul12,       // 16MHz * 12 = 192MHz VCO
-            divr: Some(PllDiv::Div2), // 192MHz / 2 = 96MHz system clock
-            divq: None,
-            divp: Some(PllDiv::Div12), // 192MHz / 12 = 16MHz for peripherals
-            frac: Some(0),
-        });
-
-        config.rcc.ahb_pre = AHBPrescaler::Div1;
-        config.rcc.apb1_pre = APBPrescaler::Div1;
-        config.rcc.apb2_pre = APBPrescaler::Div1;
-        config.rcc.apb7_pre = APBPrescaler::Div1;
-        config.rcc.ahb5_pre = AHB5Prescaler::Div4; // Radio bus: 96MHz / 4 = 24MHz
-        config.rcc.voltage_scale = VoltageScale::Range1;
-        config.rcc.sys = Sysclk::Pll1R;
-        config.rcc.mux.rngsel = mux::Rngsel::Hsi; // RNG clock from HSI (16 MHz)
-        config.rcc.mux.radiostsel = mux::Radiostsel::Lse;
-    }
+    config.rcc = RccConfig::new_wpan();
 
     info!("Embassy STM32WBA65 BLE DTM Runtime Example");
 

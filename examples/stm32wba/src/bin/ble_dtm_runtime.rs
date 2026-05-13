@@ -24,8 +24,7 @@ use embassy_stm32::gpio::Pull;
 use embassy_stm32::peripherals::{AES as AesPeriph, PKA as PkaPeriph, RNG};
 use embassy_stm32::pka::{self, Pka};
 use embassy_stm32::rng::{self, Rng};
-use embassy_stm32::time::Hertz;
-use embassy_stm32::{Config, bind_interrupts, exti, interrupt};
+use embassy_stm32::{Config, bind_interrupts, exti, interrupt, rcc};
 use embassy_stm32_wpan::bluetooth::gap::{AdvData, AdvParams, AdvType, GapEvent};
 use embassy_stm32_wpan::bluetooth::gatt::{CharProperties, GattEventMask, SecurityPermissions, ServiceType, Uuid};
 use embassy_stm32_wpan::bluetooth::hci::types::DtmPacketPayload;
@@ -72,40 +71,7 @@ async fn ble_runner_task(platform: &'static Platform) {
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
     let mut config = Config::default();
-    {
-        use embassy_stm32::rcc::*;
-        config.rcc.hse = Some(Hse {
-            prescaler: HsePrescaler::Div1,
-            trim: None,
-        });
-        config.rcc.ls = LsConfig {
-            rtc: RtcClockSource::Lse,
-            lsi: false,
-            lse: Some(LseConfig {
-                frequency: Hertz(32_768),
-                mode: LseMode::Oscillator(LseDrive::MediumLow),
-                peripherals_clocked: true,
-            }),
-        };
-        config.rcc.pll1 = Some(Pll {
-            source: PllSource::Hsi,
-            prediv: PllPreDiv::Div1,
-            mul: PllMul::Mul30,
-            divr: Some(PllDiv::Div5),
-            divq: None,
-            divp: Some(PllDiv::Div30),
-            frac: Some(0),
-        });
-        config.rcc.ahb_pre = AHBPrescaler::Div1;
-        config.rcc.apb1_pre = APBPrescaler::Div1;
-        config.rcc.apb2_pre = APBPrescaler::Div1;
-        config.rcc.apb7_pre = APBPrescaler::Div1;
-        config.rcc.ahb5_pre = AHB5Prescaler::Div4;
-        config.rcc.voltage_scale = VoltageScale::Range1;
-        config.rcc.sys = Sysclk::Pll1R;
-        config.rcc.mux.rngsel = mux::Rngsel::Hsi;
-        config.rcc.mux.radiostsel = mux::Radiostsel::Lse;
-    }
+    config.rcc = rcc::Config::new_wpan();
 
     let p = embassy_stm32::init(config);
 
