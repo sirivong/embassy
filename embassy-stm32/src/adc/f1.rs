@@ -2,11 +2,11 @@ use core::marker::PhantomData;
 
 use stm32_metapac::adc::regs::{Smpr1, Smpr2, Sqr1, Sqr2, Sqr3};
 
-use super::blocking_delay_us;
 use crate::adc::{Adc, AdcRegs, ConversionMode, DefaultInstance, Instance, SampleTime, VrefInt};
 use crate::interrupt::typelevel::Interrupt;
 use crate::interrupt::{self};
 use crate::time::Hertz;
+use crate::wait::block_for_us;
 use crate::{Peri, rcc};
 
 pub const VDDA_CALIB_MV: u32 = 3300;
@@ -46,7 +46,7 @@ impl AdcRegs for crate::pac::adc::Adc {
             reg.set_adon(true);
         });
 
-        blocking_delay_us(3);
+        block_for_us(3);
     }
 
     fn start(&self) {
@@ -147,7 +147,7 @@ impl<'d, T: DefaultInstance> Adc<'d, T> {
 
         // 11.4: Before starting a calibration, the ADC must have been in power-on state (ADON bit = ‘1’)
         // for at least two ADC clock cycles.
-        blocking_delay_us((1_000_000 * 2) / Self::freq().0 as u64 + 1);
+        block_for_us((1_000_000 * 2) / Self::freq().0 as u64 + 1);
 
         // Reset calibration
         T::regs().cr2().modify(|reg| reg.set_rstcal(true));
@@ -162,7 +162,7 @@ impl<'d, T: DefaultInstance> Adc<'d, T> {
         }
 
         // One cycle after calibration
-        blocking_delay_us((1_000_000 * 1) / Self::freq().0 as u64 + 1);
+        block_for_us((1_000_000 * 1) / Self::freq().0 as u64 + 1);
 
         T::Interrupt::unpend();
         unsafe { T::Interrupt::enable() };

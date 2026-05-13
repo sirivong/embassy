@@ -17,6 +17,8 @@ use sdio_host::sd::{BusWidth, CID, CSD, CardStatus};
 #[cfg(sdmmc_uhs)]
 use sdio_host::sd_cmd;
 
+#[cfg(sdmmc_dlyb)]
+use crate::dlyb::DlybInstance;
 #[cfg(sdmmc_v1)]
 use crate::dma::ChannelAndRequest;
 #[cfg(sdmmc_uhs)]
@@ -28,9 +30,10 @@ use crate::interrupt::typelevel::Interrupt;
 use crate::pac::sdmmc::Sdmmc as RegBlock;
 use crate::rcc::{self, RccInfo, RccPeripheral, SealedRccPeripheral};
 use crate::time::Hertz;
+use crate::wait::block_for_us;
 #[cfg(sdmmc_uhs)]
-use crate::try_until::try_until;
-use crate::{block_for_us, interrupt, peripherals};
+use crate::wait::{try_until, wait_for_us};
+use crate::{interrupt, peripherals};
 
 /// Module for SD and EMMC cards
 pub mod sd;
@@ -910,7 +913,7 @@ impl<'d> Sdmmc<'d> {
 impl<'d> Sdmmc<'d> {
     /// 4-lane SD with UHS-I vswitch and a DLYB block for RX tap tuning.
     /// Use on instances where CKIN is not routed (e.g. STM32N6 SDMMC2).
-    pub fn new_4bit_with_vswitch_dlyb<T: Instance, D: dlyb::DlybInstance<T>>(
+    pub fn new_4bit_with_vswitch_dlyb<T: Instance, D: DlybInstance<T>>(
         sdmmc: Peri<'d, T>,
         _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
         clk: Peri<'d, impl CkPin<T>>,
@@ -925,10 +928,9 @@ impl<'d> Sdmmc<'d> {
     ) -> Self {
         // DLL is held in reset out of POR; release it so the DLYB can
         // start lock acquisition once enabled.
-        <D as dlyb::SealedDlybInstance<T>>::release_dll_reset();
-        let slot = DlybSlot {
-            regs: <D as dlyb::SealedDlybInstance<T>>::regs(),
-        };
+        D::reset_and_enable();
+
+        let slot = DlybSlot { regs: D::regs() };
         Self::new_inner(
             sdmmc,
             new_pin!(clk, CLK_AF).unwrap(),
@@ -1474,8 +1476,6 @@ impl<'d> Sdmmc<'d> {
     /// shifter restored to 3.3V so the caller can retry without UHS.
     #[cfg(sdmmc_uhs)]
     async fn voltage_switch(&mut self) -> Result<(), Error> {
-        use crate::wait_for_us;
-
         // CKSTOP fires within microseconds of the CMD11 R1 ack at
         // 400 kHz; a 50 ms ceiling is generous.
         const CKSTOP_TIMEOUT: u64 = 50_000;
