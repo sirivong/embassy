@@ -89,7 +89,6 @@ impl Default for ChannelPacket {
 }
 
 pub struct Controller<'d, T: Runtime> {
-    // TODO: should this be static
     _runtime: &'d mut T,
     receiver: zerocopy_channel::Receiver<'static, CriticalSectionRawMutex, ChannelPacket>,
     cmd_buf: ([u8; 255], usize),
@@ -118,7 +117,7 @@ impl<'d, T: Runtime> Controller<'d, T> {
 
         trace!("Waiting for rng to fill...");
         // Wait for the rng buffer to fill
-        platform.wait_ready().await;
+        platform.wait_rng_ready().await;
 
         trace!("Waiting for rng to fill...done!");
 
@@ -157,7 +156,7 @@ impl<'d, T: Runtime> Controller<'d, T> {
         util_seq::seq_resume();
 
         // Wake the runner
-        platform.init_ble();
+        platform.start_run_ble();
 
         Ok(Self {
             receiver,

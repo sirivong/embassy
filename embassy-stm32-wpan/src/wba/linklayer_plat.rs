@@ -342,6 +342,10 @@ pub fn earliest_timer_deadline() -> Instant {
     }
 }
 
+#[cfg(feature = "ble-stack-llo")]
+pub fn check_expired_timers() {}
+
+#[cfg(not(feature = "ble-stack-llo"))]
 /// Check and fire any expired timers. Called from the runner loop.
 /// Calls BLEPLATCB_TimerExpiry(id) for each expired timer to notify the BLE stack.
 pub fn check_expired_timers() {
@@ -789,7 +793,7 @@ pub unsafe extern "C" fn LINKLAYER_PLAT_GetRNG(ptr_rnd: *mut u8, len: u32) {
     }
 
     get_platform()
-        .try_fill_bytes(core::slice::from_raw_parts_mut(ptr_rnd, len as usize))
+        .try_fill_all_bytes(core::slice::from_raw_parts_mut(ptr_rnd, len as usize))
         .expect("LINKLAYER_PLAT_GetRNG: could not fill bytes");
 
     trace!("LINKLAYER_PLAT_GetRNG: generated {} random bytes", len);
@@ -1247,7 +1251,7 @@ pub unsafe extern "C" fn BLEPLAT_RngGet(n: u8, val: *mut u32) {
     }
 
     get_platform()
-        .try_fill_bytes(core::slice::from_raw_parts_mut(val as *mut u8, n as usize * 4))
+        .try_fill_all_bytes(core::slice::from_raw_parts_mut(val as *mut u8, n as usize * 4))
         .expect("BLEPLAT_RngGet: could not fill bytes");
 }
 

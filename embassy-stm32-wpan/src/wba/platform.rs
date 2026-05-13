@@ -119,21 +119,23 @@ impl Platform {
         )
     }
 
+    // TODO: provide methods for the user to fill rng bytes, etc for their application
+
     pub(crate) unsafe fn get_channel(
         &'static self,
     ) -> &'static mut Channel<'static, CriticalSectionRawMutex, ChannelPacket> {
         unsafe { &mut *self.channel.get() }
     }
 
-    pub(crate) fn init_ble(&self) {
+    pub(crate) fn start_run_ble(&self) {
         self.ble_init.set_high();
     }
 
-    pub(crate) async fn wait_ready(&self) {
+    pub(crate) async fn wait_rng_ready(&self) {
         self.pipe.wait_full().await
     }
 
-    pub(crate) fn try_fill_bytes(&self, buf: &mut [u8]) -> Result<(), ()> {
+    pub(crate) fn try_fill_all_bytes(&self, buf: &mut [u8]) -> Result<(), ()> {
         if self.pipe.try_read(buf).map_err(|_| ())? < buf.len() {
             Err(())
         } else {
