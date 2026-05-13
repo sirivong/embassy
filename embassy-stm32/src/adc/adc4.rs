@@ -226,6 +226,21 @@ pub const fn resolution_to_max_count(res: Resolution) -> u32 {
     }
 }
 
+/// Number of bits to left-shift a right-aligned N-bit threshold into the 12-bit AWD register.
+///
+/// The AWD comparison is always performed on left-aligned 12-bit raw data (RM Table 158).
+/// DR returns right-aligned N-bit values; this shift converts them to 12-bit threshold space.
+pub const fn resolution_to_awd_left_shift(res: Resolution) -> u32 {
+    match res {
+        Resolution::Bits12 => 0,
+        Resolution::Bits10 => 2,
+        Resolution::Bits8 => 4,
+        Resolution::Bits6 => 6,
+        #[allow(unreachable_patterns)]
+        _ => 0,
+    }
+}
+
 fn from_ker_ck(frequency: Hertz) -> Presc {
     let raw_prescaler = rcc::raw_prescaler(frequency.0, MAX_ADC_CLK_FREQ.0);
     match raw_prescaler {
@@ -510,21 +525,26 @@ impl<'d, T: Instance<Regs = crate::pac::adc::Adc4>> super::Adc<'d, T> {
     ///
     /// `watchdog` selects which of the three hardware watchdogs to use. `channels` controls which
     /// ADC channels are monitored; see [`WatchdogChannels`] for which variants are valid for each
-    /// watchdog. `low_threshold` and `high_threshold` are raw ADC counts in the range
-    /// `[0, 2^N − 1]` for the currently configured resolution. The watchdog fires when a sample
-    /// falls **outside** `[low_threshold, high_threshold]`.
+    /// watchdog. `low_threshold` and `high_threshold` are raw ADC counts in the **same space as
+    /// `ADC_DR`** for the currently configured resolution (i.e. `[0, 2^N − 1]` for N-bit
+    /// resolution). The watchdog fires when a sample falls **outside** `[low_threshold,
+    /// high_threshold]`.
     ///
-    /// ## Oversampling
+    /// ## Threshold scaling
     ///
-    /// When oversampling is enabled via [`Adc::set_averaging_adc4`], the ADC hardware always
-    /// compares `ADC_DR[15:4]` (the 12 MSBs of the 16-bit data register) against the threshold,
-    /// per the reference manual.  With a typical averaging shift that yields a 12-bit result in
-    /// `DR[11:0]`, the effective comparison window is only 8 bits: `DR[11:4]` vs `HTx[7:0]` /
-    /// `LTx[7:0]`, and `HTx[11:8]` / `LTx[11:8]` must stay zero.
+    /// The hardware AWD comparison is always against a 12-bit register value, but the data
+    /// format depends on whether oversampling is active:
     ///
-    /// This method automatically detects whether oversampling is active and scales the caller's
-    /// thresholds by `>> 4` before writing them to hardware, so you always pass thresholds in
-    /// the same 12-bit space as the sample values returned by [`AnalogWatchdog::monitor`].
+    /// **Without oversampling (RM Table 158):** comparison is on left-aligned 12-bit raw data.
+    /// For N-bit resolution, `DR` returns a right-aligned N-bit value while the hardware
+    /// left-aligns it to 12 bits for comparison.  This method left-shifts caller thresholds by
+    /// `(12 - N)` automatically so you may pass values in the same range as `DR`.
+    ///
+    /// **With oversampling ([`Adc::set_averaging_adc4`]):** `RES` bits are ignored; comparison
+    /// is on `ADC_DR[15:4]` (the 12 MSBs of the 16-bit data register).  With the matched
+    /// right-shift used by [`Adc::set_averaging_adc4`], `DR` holds a 12-bit result in
+    /// `DR[11:0]` and the effective window is `DR[11:4]` vs `HTx[7:0]`/`LTx[7:0]`.  This
+    /// method right-shifts caller thresholds by 4 automatically.
     ///
     /// The returned [`AnalogWatchdog`] does **not** borrow the ADC, so you may use the ADC for
     /// DMA or other operations while the watchdog is active.  Call [`AnalogWatchdog::wait`] to
@@ -551,15 +571,21 @@ impl<'d, T: Instance<Regs = crate::pac::adc::Adc4>> super::Adc<'d, T> {
             "low_threshold must be <= high_threshold"
         );
 
-        // When oversampling is active, AWD compares ADC_DR[15:4] against the threshold
-        // (RM: "comparison is performed on the most significant 12 bits of the 16-bit
-        // oversampled result ADC_DR[15:4]"). For the common case where OVSS equals the
-        // number of accumulation bits (averaging mode), DR holds a 12-bit result and the
-        // effective AWD window is DR[11:4] — only the upper 8 bits. Scale down by 4.
         let (lt, ht) = if T::regs().cfgr2().read().ovse() {
+            // During oversampling RES bits are ignored; comparison is on ADC_DR[15:4] (RM:
+            // "most significant 12 bits of the 16-bit oversampled result").  With matched OVSS
+            // (log2 of ratio), DR holds a 12-bit result so the effective window is DR[11:4] —
+            // 8 bits.  HTx[11:8]/LTx[11:8] must be zero; scale caller thresholds >> 4.
             (low_threshold >> 4, high_threshold >> 4)
         } else {
-            (low_threshold, high_threshold)
+            // Without oversampling, comparison is on left-aligned 12-bit raw data (RM Table 158).
+            // DR returns N-bit right-aligned values; left-shift to 12-bit space so the lower
+            // (12-N) threshold bits are kept zero as the RM requires.
+            let shift = resolution_to_awd_left_shift(T::regs().cfgr1().read().res());
+            (
+                ((low_threshold as u32) << shift) as u16,
+                ((high_threshold as u32) << shift) as u16,
+            )
         };
 
         let index = watchdog.index();
