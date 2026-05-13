@@ -449,17 +449,17 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
         #[cfg(octospim_v1)] ctrl_pgroup: u8,
     ) -> Self {
         #[cfg(octospim_v1)]
-        info!("OCTOSPI_IDX: {:?}", T::OCTOSPI_IDX);
+        trace!("OCTOSPI_IDX: {:?}", T::OCTOSPI_IDX);
 
         #[cfg(octospim_v1)]
         let (octospi1_was_enabled, octospi2_was_enabled) = {
-            info!("IOL_PGROUP: 0b{:02b}", iol_pgroup);
+            trace!("IOL_PGROUP: 0b{:02b}", iol_pgroup);
             if let Some(ioh_pgroup) = ioh_pgroup {
-                info!("IOH_PGROUP: 0b{:02b}", ioh_pgroup);
+                trace!("IOH_PGROUP: 0b{:02b}", ioh_pgroup);
             } else {
-                info!("IOH_PGROUP: N/A");
+                trace!("IOH_PGROUP: N/A");
             }
-            info!("CLK/NCS/DQS CTRL_PGROUP: 0b{:02b}", ctrl_pgroup);
+            trace!("CLK/NCS/DQS CTRL_PGROUP: 0b{:02b}", ctrl_pgroup);
 
             // RCC for octospim should be enabled before writing register
             #[cfg(stm32l4)]
@@ -470,7 +470,7 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
             crate::pac::RCC.ahb3enr().modify(|w| w.set_iomngren(true));
 
             let previously_enabled_instances = Self::disable_octospis_for_octospim_config();
-            info!(
+            trace!(
                 "OCTOSPI1_ENABLED: {:?}, OCTOSPI2_ENABLED: {:?}",
                 previously_enabled_instances.0, previously_enabled_instances.1
             );
@@ -498,9 +498,9 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
             let cr = T::OCTOSPIM_REGS.cr().read();
             let p1cr = T::OCTOSPIM_REGS.p1cr().read();
             let p2cr = T::OCTOSPIM_REGS.p2cr().read();
-            info!("OCTOSPIM_CR: 0x{:08X} - {:?}", cr.0, cr);
-            info!("OCTOSPIM_P1CR: 0x{:08X} - {:?}", p1cr.0, p1cr);
-            info!("OCTOSPIM_P2CR: 0x{:08X} - {:?}", p2cr.0, p2cr);
+            debug!("OCTOSPIM_CR: 0x{:08X} - {:?}", cr.0, cr);
+            debug!("OCTOSPIM_P1CR: 0x{:08X} - {:?}", p1cr.0, p1cr);
+            debug!("OCTOSPIM_P2CR: 0x{:08X} - {:?}", p2cr.0, p2cr);
 
             previously_enabled_instances
         };
