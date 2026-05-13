@@ -1374,55 +1374,55 @@ fn main() {
         (("octospi", "NCS"), quote!(crate::ospi::NSSPin)),
         (("octospi", "CLK"), quote!(crate::ospi::SckPin)),
         (("octospi", "NCLK"), quote!(crate::ospi::NckPin)),
-        // when using IOLSRC = IO3-0 (unswapped)
+        // when using IOL_PGROUP = IO3-0 (unswapped)
         (("octospim", "P1_IO0"), quote!(crate::ospi::D0Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
         (("octospim", "P1_IO1"), quote!(crate::ospi::D1Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
         (("octospim", "P1_IO2"), quote!(crate::ospi::D2Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
         (("octospim", "P1_IO3"), quote!(crate::ospi::D3Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
-        // when using IOHSRC = IO7-4 (unswapped)
+        // when using IOH_PGROUP = IO7-4 (unswapped)
         (("octospim", "P1_IO4"), quote!(crate::ospi::D4Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
         (("octospim", "P1_IO5"), quote!(crate::ospi::D5Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
         (("octospim", "P1_IO6"), quote!(crate::ospi::D6Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
         (("octospim", "P1_IO7"), quote!(crate::ospi::D7Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
-        // when using IOLSRC = IO7-4 (swapped)
+        // when using IOL_PGROUP = IO7-4 (swapped)
         (("octospim", "P1_IO4"), quote!(crate::ospi::D0Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
         (("octospim", "P1_IO5"), quote!(crate::ospi::D1Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
         (("octospim", "P1_IO6"), quote!(crate::ospi::D2Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
         (("octospim", "P1_IO7"), quote!(crate::ospi::D3Src<{ crate::ospi::OCTOSPIM_P1_HIGH }>)),
-        // when using IOHSRC = IO3-0 (swapped)
+        // when using IOH_PGROUP = IO3-0 (swapped)
         (("octospim", "P1_IO0"), quote!(crate::ospi::D4Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
         (("octospim", "P1_IO1"), quote!(crate::ospi::D5Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
         (("octospim", "P1_IO2"), quote!(crate::ospi::D6Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
         (("octospim", "P1_IO3"), quote!(crate::ospi::D7Src<{ crate::ospi::OCTOSPIM_P1_LOW }>)),
-        (("octospim", "P1_DQS"), quote!(crate::ospi::DQSSrc<{ crate::ospi::OCTOSPIM_P1 }>)),
-        (("octospim", "P1_NCS"), quote!(crate::ospi::NSSSrc<{ crate::ospi::OCTOSPIM_P1 }>)),
-        (("octospim", "P1_CLK"), quote!(crate::ospi::SckSrc<{ crate::ospi::OCTOSPIM_P1 }>)),
-        (("octospim", "P1_NCLK"), quote!(crate::ospi::NckSrc<{ crate::ospi::OCTOSPIM_P1 }>)),
-        // when using IOLSRC = IO3-0 (unswapped)
+        (("octospim", "P1_DQS"), quote!(crate::ospi::DQSSrc<{ crate::ospi::OCTOSPIM_P1_CTRL }>)),
+        (("octospim", "P1_NCS"), quote!(crate::ospi::NSSSrc<{ crate::ospi::OCTOSPIM_P1_CTRL }>)),
+        (("octospim", "P1_CLK"), quote!(crate::ospi::SckSrc<{ crate::ospi::OCTOSPIM_P1_CTRL }>)),
+        (("octospim", "P1_NCLK"), quote!(crate::ospi::NckSrc<{ crate::ospi::OCTOSPIM_P1_CTRL }>)),
+        // when using IOL_PGROUP = IO3-0 (unswapped)
         (("octospim", "P2_IO0"), quote!(crate::ospi::D0Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
         (("octospim", "P2_IO1"), quote!(crate::ospi::D1Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
         (("octospim", "P2_IO2"), quote!(crate::ospi::D2Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
         (("octospim", "P2_IO3"), quote!(crate::ospi::D3Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
-        // when using IOHSRC = IO7-4 (unswapped)
+        // when using IOH_PGROUP = IO7-4 (unswapped)
         (("octospim", "P2_IO4"), quote!(crate::ospi::D4Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
         (("octospim", "P2_IO5"), quote!(crate::ospi::D5Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
         (("octospim", "P2_IO6"), quote!(crate::ospi::D6Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
         (("octospim", "P2_IO7"), quote!(crate::ospi::D7Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
-        // when using IOLSRC = IO7-4 (swapped)
+        // when using IOL_PGROUP = IO7-4 (swapped)
         (("octospim", "P2_IO4"), quote!(crate::ospi::D0Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
         (("octospim", "P2_IO5"), quote!(crate::ospi::D1Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
         (("octospim", "P2_IO6"), quote!(crate::ospi::D2Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
         (("octospim", "P2_IO7"), quote!(crate::ospi::D3Src<{ crate::ospi::OCTOSPIM_P2_HIGH }>)),
-        // when using IOHSRC = IO3-0 (swapped)
+        // when using IOH_PGROUP = IO3-0 (swapped)
         (("octospim", "P2_IO0"), quote!(crate::ospi::D4Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
         (("octospim", "P2_IO1"), quote!(crate::ospi::D5Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
         (("octospim", "P2_IO2"), quote!(crate::ospi::D6Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
         (("octospim", "P2_IO3"), quote!(crate::ospi::D7Src<{ crate::ospi::OCTOSPIM_P2_LOW }>)),
 
-        (("octospim", "P2_DQS"), quote!(crate::ospi::DQSSrc<{ crate::ospi::OCTOSPIM_P2 }>)),
-        (("octospim", "P2_NCS"), quote!(crate::ospi::NSSSrc<{ crate::ospi::OCTOSPIM_P2 }>)),
-        (("octospim", "P2_CLK"), quote!(crate::ospi::SckSrc<{ crate::ospi::OCTOSPIM_P2 }>)),
-        (("octospim", "P2_NCLK"), quote!(crate::ospi::NckSrc<{ crate::ospi::OCTOSPIM_P2 }>)),
+        (("octospim", "P2_DQS"), quote!(crate::ospi::DQSSrc<{ crate::ospi::OCTOSPIM_P2_CTRL }>)),
+        (("octospim", "P2_NCS"), quote!(crate::ospi::NSSSrc<{ crate::ospi::OCTOSPIM_P2_CTRL }>)),
+        (("octospim", "P2_CLK"), quote!(crate::ospi::SckSrc<{ crate::ospi::OCTOSPIM_P2_CTRL }>)),
+        (("octospim", "P2_NCLK"), quote!(crate::ospi::NckSrc<{ crate::ospi::OCTOSPIM_P2_CTRL }>)),
         (("xspi", "IO0"), quote!(crate::xspi::D0Pin)),
         (("xspi", "IO1"), quote!(crate::xspi::D1Pin)),
         (("xspi", "IO2"), quote!(crate::xspi::D2Pin)),

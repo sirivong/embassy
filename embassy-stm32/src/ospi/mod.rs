@@ -1,6 +1,29 @@
 //! OCTOSPI Serial Peripheral Interface
 //!
-
+//! Notes on OCTOSPIM (OctoSPI manager / mux)
+//! Some chips have an OCTOSPIM peripheral, such chips, like the STM32H735, have a default mapping as follows:
+//!
+//! RM0468 Rev 3:
+//! "In the default out-of-reset configuration, all the OCTOSPI1 and OCTOSPI2 signals are mapped, respectively, on
+//! Port 1 and on Port 2."
+//!
+//! This mapping is maintained by this implementation in that:
+//! * OCTOSPIM.P1CR is used for OCTOSPI1.
+//! * OCTOSPIM.P2CR is used for OCTOSPI2.
+//!
+//! However, it is possible to have a bootloader which does not follow this convention and runs your code from
+//! memory-mapped flash, which will then break things when you use the functions in this module.
+//! In this very special case, use a function that resides in RAM to re-configure the OctoSPI.
+//!
+//! Additionally, there are other issues when running code from memory-mapped mode, since the reference manual states:
+//!
+//! "The OCTOSPIM configuration can be changed only when all OCTOSPIs are disabled"
+//!
+//! this implementation does indeed disable both OCTOSPI peripherals before OCTOSPIM reconfiguration.
+//!
+//! Finally, for simplicity, this implementation currently enforces that DQS, NCS and CLK are on the same physical
+//! group, however this is not a requirement of the hardware.  i.e. using P1_NCS and P1_CLK is ok, but P1_NCS and P2_CLK is
+//! not and you will get a compile error if you try. PR's welcome to change this as needed.
 #![macro_use]
 
 pub mod enums;
@@ -21,6 +44,12 @@ use crate::pac::octospim::Octospim;
 use crate::rcc::{self, RccPeripheral};
 use crate::{Peri, peripherals};
 
+//
+// OCTOSPIM Physical Groups
+// bit 0 high = low group (if used), bit 1 high = hig group (if used)
+// bit 1 high = port 2, bit 1 low = port 1
+//
+
 #[cfg(octospim_v1)]
 pub(crate) const OCTOSPIM_P1_LOW: u8 = 0b00;
 #[cfg(octospim_v1)]
@@ -31,9 +60,9 @@ pub(crate) const OCTOSPIM_P2_LOW: u8 = 0b10;
 pub(crate) const OCTOSPIM_P2_HIGH: u8 = 0b11;
 
 #[cfg(octospim_v1)]
-pub(crate) const OCTOSPIM_P1: u8 = 0b0;
+pub(crate) const OCTOSPIM_P1_CTRL: u8 = 0b00;
 #[cfg(octospim_v1)]
-pub(crate) const OCTOSPIM_P2: u8 = 0b1;
+pub(crate) const OCTOSPIM_P2_CTRL: u8 = 0b10;
 
 /// OPSI driver config.
 #[derive(Clone, Copy)]
@@ -273,6 +302,103 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
         });
     }
 
+    #[cfg(octospim_v1)]
+    fn octospim_low_data_src() -> u8 {
+        if T::OCTOSPI_IDX == 1 {
+            0b00
+        } else {
+            0b10
+        }
+    }
+
+    #[cfg(octospim_v1)]
+    fn octospim_high_data_src() -> u8 {
+        if T::OCTOSPI_IDX == 1 {
+            0b01
+        } else {
+            0b11
+        }
+    }
+
+    #[cfg(octospim_v1)]
+    fn octospim_signal_src() -> bool {
+        T::OCTOSPI_IDX == 2
+    }
+
+    #[cfg(octospim_v1)]
+    fn octospim_uses_p2(physical_group: u8) -> bool {
+        physical_group & 0b10 != 0
+    }
+
+    #[cfg(octospim_v1)]
+    fn octospim_uses_high_group(physical_group: u8) -> bool {
+        physical_group & 0b01 != 0
+    }
+
+    // ... existing code ...
+
+    #[cfg(octospim_v1)]
+    fn configure_octospim_data_group(physical_group: u8, data_src: u8) {
+        let use_high_group = Self::octospim_uses_high_group(physical_group);
+
+        if Self::octospim_uses_p2(physical_group) {
+            T::OCTOSPIM_REGS.p2cr().modify(|w| {
+                if use_high_group {
+                    w.set_iohen(true);
+                    w.set_iohsrc(data_src);
+                } else {
+                    w.set_iolen(true);
+                    w.set_iolsrc(data_src);
+                }
+            });
+        } else {
+            T::OCTOSPIM_REGS.p1cr().modify(|w| {
+                if use_high_group {
+                    w.set_iohen(true);
+                    w.set_iohsrc(data_src);
+                } else {
+                    w.set_iolen(true);
+                    w.set_iolsrc(data_src);
+                }
+            });
+        }
+    }
+
+    #[cfg(octospim_v1)]
+    fn configure_octospim_control_group(physical_group: u8, has_dqs: bool) {
+        let signal_src = Self::octospim_signal_src();
+
+        if Self::octospim_uses_p2(physical_group) {
+            T::OCTOSPIM_REGS.p2cr().modify(|w| {
+                w.set_clken(true);
+                w.set_clksrc(signal_src);
+                w.set_ncsen(true);
+                w.set_ncssrc(signal_src);
+
+                if has_dqs {
+                    w.set_dqsen(true);
+                    w.set_dqssrc(signal_src);
+                } else {
+                    w.set_dqsen(false);
+                }
+            });
+        } else {
+            T::OCTOSPIM_REGS.p1cr().modify(|w| {
+                w.set_clken(true);
+                w.set_clksrc(signal_src);
+                w.set_ncsen(true);
+                w.set_ncssrc(signal_src);
+
+                if has_dqs {
+                    w.set_dqsen(true);
+                    w.set_dqssrc(signal_src);
+                } else {
+                    w.set_dqsen(false);
+                }
+            });
+        }
+    }
+
     fn new_inner(
         peri: Peri<'d, T>,
         d0: Option<Flex<'d>>,
@@ -290,21 +416,21 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
         config: Config,
         width: OspiWidth,
         dual_quad: bool,
-        #[cfg(octospim_v1)] iolsrc: u8,
-        #[cfg(octospim_v1)] iohsrc: Option<u8>,
-        #[cfg(octospim_v1)] src: u8,
+        #[cfg(octospim_v1)] iol_pgroup: u8,
+        #[cfg(octospim_v1)] ioh_pgroup: Option<u8>,
+        #[cfg(octospim_v1)] ctrl_pgroup: u8,
     ) -> Self {
         info!("OCTOSPI_IDX: {:?}", T::OCTOSPI_IDX);
 
         #[cfg(octospim_v1)]
         {
-            info!("IOLSRC: 0b{:02b}", iolsrc);
-            if let Some(iohsrc) = iohsrc {
-                info!("IOHSRC: 0b{:02b}", iohsrc);
+            info!("IOL_PGROUP: 0b{:02b}", iol_pgroup);
+            if let Some(ioh_pgroup) = ioh_pgroup {
+                info!("IOH_PGROUP: 0b{:02b}", ioh_pgroup);
             } else {
-                info!("IOHSRC: N/A");
+                info!("IOH_PGROUP: N/A");
             }
-            info!("CLK/NCS/DQS SRC: 0b{:02b}", src);
+            info!("CLK/NCS/DQS CTRL_PGROUP: 0b{:02b}", ctrl_pgroup);
 
 
             // RCC for octospim should be enabled before writing register
@@ -315,7 +441,7 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
             #[cfg(not(any(stm32l4, stm32u5)))]
             crate::pac::RCC.ahb3enr().modify(|w| w.set_iomngren(true));
 
-            // Disable both OctoSPI peripherals first
+            // Both OCTOSPIn peripherals must be disabled before configuring OCTOSPIM
             crate::peripherals::OCTOSPI1::REGS.cr().modify(|w| {
                 w.set_en(false);
             });
@@ -330,31 +456,49 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
             });
 
 
-            T::OCTOSPIM_REGS.p1cr().modify(|w| {
-                w.set_clksrc(false);
-                w.set_dqssrc(false);
-                w.set_ncssrc(false);
-                w.set_clken(false);
-                w.set_dqsen(false);
-                w.set_ncsen(false);
-                w.set_iolsrc(0);
-                w.set_iohsrc(OCTOSPIM_P2_LOW);
-                w.set_iolen(false);
-                w.set_iohen(true);
-            });
+            Self::configure_octospim_control_group(ctrl_pgroup, dqs.is_some());
+            Self::configure_octospim_data_group(iol_pgroup, Self::octospim_low_data_src());
 
-            T::OCTOSPIM_REGS.p2cr().modify(|w| {
-                w.set_clksrc(true);
-                w.set_dqssrc(false);
-                w.set_ncssrc(true);
-                w.set_clken(true);
-                w.set_dqsen(false);
-                w.set_ncsen(true);
-                w.set_iolsrc(0);
-                w.set_iohsrc(0);
-                w.set_iolen(false);
-                w.set_iohen(false);
-            });
+            if dual_quad {
+                debug_assert!(ioh_pgroup.is_some(), "dual-quad must set ioh_pgroup for the second flash chip");
+            }
+
+            if let Some(ioh_pgroup) = ioh_pgroup {
+                Self::configure_octospim_data_group(ioh_pgroup, Self::octospim_high_data_src());
+            }
+
+            // T::OCTOSPIM_REGS.p1cr().modify(|w| {
+            //     w.set_clksrc(false);
+            //     w.set_dqssrc(false);
+            //     w.set_ncssrc(false);
+            //     w.set_clken(false);
+            //     w.set_dqsen(false);
+            //     w.set_ncsen(false);
+            //     w.set_iolsrc(0);
+            //     w.set_iohsrc(OCTOSPIM_P2_LOW);
+            //     w.set_iolen(false);
+            //     w.set_iohen(true);
+            // });
+            //
+            // T::OCTOSPIM_REGS.p2cr().modify(|w| {
+            //     w.set_clksrc(true);
+            //     w.set_dqssrc(false);
+            //     w.set_ncssrc(true);
+            //     w.set_clken(true);
+            //     w.set_dqsen(false);
+            //     w.set_ncsen(true);
+            //     w.set_iolsrc(0);
+            //     w.set_iohsrc(0);
+            //     w.set_iolen(false);
+            //     w.set_iohen(false);
+            // });
+
+            let cr = T::OCTOSPIM_REGS.cr().read();
+            let p1cr = T::OCTOSPIM_REGS.p1cr().read();
+            let p2cr = T::OCTOSPIM_REGS.p2cr().read();
+            info!("OCTOSPIM_CR: 0x{:08X} - {:?}", cr.0, cr);
+            info!("OCTOSPIM_P1CR: 0x{:08X} - {:?}", p1cr.0, p1cr);
+            info!("OCTOSPIM_P2CR: 0x{:08X} - {:?}", p2cr.0, p2cr);
         }
 
         // System configuration
@@ -728,12 +872,12 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
 
 impl<'d, T: Instance> Ospi<'d, T, Blocking> {
     /// Create new blocking OSPI driver for a single spi external chip
-    pub fn new_blocking_singlespi<const IOLSRC: u8, const SRC: u8>(
+    pub fn new_blocking_singlespi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
-        d0: Peri<'d, impl D0Src<T, IOLSRC>>,
-        d1: Peri<'d, impl D1Src<T, IOLSRC>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
+        d0: Peri<'d, impl D0Src<T, IOL_PGROUP>>,
+        d1: Peri<'d, impl D1Src<T, IOL_PGROUP>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
         config: Config,
     ) -> Self {
         Self::new_inner(
@@ -757,20 +901,20 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             OspiWidth::SING,
             false,
             #[cfg(octospim_v1)]
-            IOLSRC,
+            IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
-            SRC,
+            CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for a dualspi external chip
-    pub fn new_blocking_dualspi<const IOLSRC: u8, const SRC: u8>(
+    pub fn new_blocking_dualspi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
-        d0: Peri<'d, impl D0Src<T, IOLSRC>>,
-        d1: Peri<'d, impl D1Src<T, IOLSRC>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
+        d0: Peri<'d, impl D0Src<T, IOL_PGROUP>>,
+        d1: Peri<'d, impl D1Src<T, IOL_PGROUP>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
         config: Config,
     ) -> Self {
         Self::new_inner(
@@ -794,22 +938,22 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             OspiWidth::DUAL,
             false,
             #[cfg(octospim_v1)]
-            IOLSRC,
+            IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
-            SRC,
+            CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for a quadspi external chip
-    pub fn new_blocking_quadspi<const IOLSRC: u8, const SRC: u8>(
+    pub fn new_blocking_quadspi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
-        d0: Peri<'d, impl D0Src<T, IOLSRC>>,
-        d1: Peri<'d, impl D1Src<T, IOLSRC>>,
-        d2: Peri<'d, impl D2Src<T, IOLSRC>>,
-        d3: Peri<'d, impl D3Src<T, IOLSRC>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
+        d0: Peri<'d, impl D0Src<T, IOL_PGROUP>>,
+        d1: Peri<'d, impl D1Src<T, IOL_PGROUP>>,
+        d2: Peri<'d, impl D2Src<T, IOL_PGROUP>>,
+        d3: Peri<'d, impl D3Src<T, IOL_PGROUP>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
         config: Config,
     ) -> Self {
         Self::new_inner(
@@ -833,17 +977,17 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             OspiWidth::QUAD,
             false,
             #[cfg(octospim_v1)]
-            IOLSRC,
+            IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
-            SRC,
+            CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for two quadspi external chips
-    pub fn new_blocking_dualquadspi<const IOLSRC1: u8, const IOLSRC2: u8, const SRC: u8>(
+    pub fn new_blocking_dualquadspi<const IOLSRC1: u8, const IOLSRC2: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
         d0_1: Peri<'d, impl D0Src<T, IOLSRC1>>,
         d1_1: Peri<'d, impl D1Src<T, IOLSRC1>>,
         d2_1: Peri<'d, impl D2Src<T, IOLSRC1>>,
@@ -852,7 +996,7 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
         d1_2: Peri<'d, impl D5Src<T, IOLSRC2>>,
         d2_2: Peri<'d, impl D6Src<T, IOLSRC2>>,
         d3_2: Peri<'d, impl D7Src<T, IOLSRC2>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
         config: Config,
     ) -> Self {
         Self::new_inner(
@@ -879,23 +1023,23 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             IOLSRC1,
             #[cfg(octospim_v1)]
             Some(IOLSRC2),
-            SRC,
+            CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for octospi external chips
-    pub fn new_blocking_octospi<const IOLSRC: u8, const IOHSRC: u8, const SRC: u8>(
+    pub fn new_blocking_octospi<const IOL_PGROUP: u8, const IOH_PGROUP: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
-        d0: Peri<'d, impl D0Src<T, IOLSRC>>,
-        d1: Peri<'d, impl D1Src<T, IOLSRC>>,
-        d2: Peri<'d, impl D2Src<T, IOLSRC>>,
-        d3: Peri<'d, impl D3Src<T, IOLSRC>>,
-        d4: Peri<'d, impl D4Src<T, IOHSRC>>,
-        d5: Peri<'d, impl D5Src<T, IOHSRC>>,
-        d6: Peri<'d, impl D6Src<T, IOHSRC>>,
-        d7: Peri<'d, impl D7Src<T, IOHSRC>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
+        d0: Peri<'d, impl D0Src<T, IOL_PGROUP>>,
+        d1: Peri<'d, impl D1Src<T, IOL_PGROUP>>,
+        d2: Peri<'d, impl D2Src<T, IOL_PGROUP>>,
+        d3: Peri<'d, impl D3Src<T, IOL_PGROUP>>,
+        d4: Peri<'d, impl D4Src<T, IOH_PGROUP>>,
+        d5: Peri<'d, impl D5Src<T, IOH_PGROUP>>,
+        d6: Peri<'d, impl D6Src<T, IOH_PGROUP>>,
+        d7: Peri<'d, impl D7Src<T, IOH_PGROUP>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
         config: Config,
     ) -> Self {
         Self::new_inner(
@@ -919,27 +1063,27 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             OspiWidth::OCTO,
             false,
             #[cfg(octospim_v1)]
-            IOLSRC,
+            IOL_PGROUP,
             #[cfg(octospim_v1)]
-            Some(IOHSRC),
-            SRC,
+            Some(IOH_PGROUP),
+            CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for octospi external chips with DQS support
-    pub fn new_blocking_octospi_with_dqs<const IOLSRC: u8, const IOHSRC: u8, const SRC: u8>(
+    pub fn new_blocking_octospi_with_dqs<const IOL_PGROUP: u8, const IOH_PGROUP: u8, const CTRL_PGROUP: u8>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
-        d0: Peri<'d, impl D0Src<T, IOLSRC>>,
-        d1: Peri<'d, impl D1Src<T, IOLSRC>>,
-        d2: Peri<'d, impl D2Src<T, IOLSRC>>,
-        d3: Peri<'d, impl D3Src<T, IOLSRC>>,
-        d4: Peri<'d, impl D4Src<T, IOHSRC>>,
-        d5: Peri<'d, impl D5Src<T, IOHSRC>>,
-        d6: Peri<'d, impl D6Src<T, IOHSRC>>,
-        d7: Peri<'d, impl D7Src<T, IOHSRC>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
-        dqs: Peri<'d, impl DQSSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
+        d0: Peri<'d, impl D0Src<T, IOL_PGROUP>>,
+        d1: Peri<'d, impl D1Src<T, IOL_PGROUP>>,
+        d2: Peri<'d, impl D2Src<T, IOL_PGROUP>>,
+        d3: Peri<'d, impl D3Src<T, IOL_PGROUP>>,
+        d4: Peri<'d, impl D4Src<T, IOH_PGROUP>>,
+        d5: Peri<'d, impl D5Src<T, IOH_PGROUP>>,
+        d6: Peri<'d, impl D6Src<T, IOH_PGROUP>>,
+        d7: Peri<'d, impl D7Src<T, IOH_PGROUP>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
+        dqs: Peri<'d, impl DQSSrc<T, CTRL_PGROUP>>,
         config: Config,
     ) -> Self {
         Self::new_inner(
@@ -963,22 +1107,22 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             OspiWidth::OCTO,
             false,
             #[cfg(octospim_v1)]
-            IOLSRC,
+            IOL_PGROUP,
             #[cfg(octospim_v1)]
-            Some(IOHSRC),
-            SRC,
+            Some(IOH_PGROUP),
+            CTRL_PGROUP,
         )
     }
 }
 
 impl<'d, T: Instance> Ospi<'d, T, Async> {
     /// Create new blocking OSPI driver for a single spi external chip
-    pub fn new_singlespi<const IOLSRC: u8, const SRC: u8, D: OctoDma<T>>(
+    pub fn new_singlespi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
-        d0: Peri<'d, impl D0Src<T, IOLSRC>>,
-        d1: Peri<'d, impl D1Src<T, IOLSRC>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
+        d0: Peri<'d, impl D0Src<T, IOL_PGROUP>>,
+        d1: Peri<'d, impl D1Src<T, IOL_PGROUP>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
         dma: Peri<'d, D>,
         _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
         config: Config,
@@ -1004,20 +1148,20 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             OspiWidth::SING,
             false,
             #[cfg(octospim_v1)]
-            IOLSRC,
+            IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
-            SRC,
+            CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for a dualspi external chip
-    pub fn new_dualspi<const IOLSRC: u8, const SRC: u8, D: OctoDma<T>>(
+    pub fn new_dualspi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
-        d0: Peri<'d, impl D0Src<T, IOLSRC>>,
-        d1: Peri<'d, impl D1Src<T, IOLSRC>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
+        d0: Peri<'d, impl D0Src<T, IOL_PGROUP>>,
+        d1: Peri<'d, impl D1Src<T, IOL_PGROUP>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
         dma: Peri<'d, D>,
         _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
         config: Config,
@@ -1043,22 +1187,22 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             OspiWidth::DUAL,
             false,
             #[cfg(octospim_v1)]
-            IOLSRC,
+            IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
-            SRC,
+            CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for a quadspi external chip
-    pub fn new_quadspi<const IOLSRC: u8, const SRC: u8, D: OctoDma<T>>(
+    pub fn new_quadspi<const IOL_PGROUP: u8, const CTRL_PGROUP: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
-        d0: Peri<'d, impl D0Src<T, IOLSRC>>,
-        d1: Peri<'d, impl D1Src<T, IOLSRC>>,
-        d2: Peri<'d, impl D2Src<T, IOLSRC>>,
-        d3: Peri<'d, impl D3Src<T, IOLSRC>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
+        d0: Peri<'d, impl D0Src<T, IOL_PGROUP>>,
+        d1: Peri<'d, impl D1Src<T, IOL_PGROUP>>,
+        d2: Peri<'d, impl D2Src<T, IOL_PGROUP>>,
+        d3: Peri<'d, impl D3Src<T, IOL_PGROUP>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
         dma: Peri<'d, D>,
         _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
         config: Config,
@@ -1084,17 +1228,17 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             OspiWidth::QUAD,
             false,
             #[cfg(octospim_v1)]
-            IOLSRC,
+            IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
-            SRC,
+            CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for two quadspi external chips
-    pub fn new_dualquadspi<const IOLSRC1: u8, const SRC: u8, const IOLSRC2: u8, D: OctoDma<T>>(
+    pub fn new_dualquadspi<const IOLSRC1: u8, const CTRL_PGROUP: u8, const IOLSRC2: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
         d0_1: Peri<'d, impl D0Src<T, IOLSRC1>>,
         d1_1: Peri<'d, impl D1Src<T, IOLSRC1>>,
         d2_1: Peri<'d, impl D2Src<T, IOLSRC1>>,
@@ -1103,7 +1247,7 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
         d1_2: Peri<'d, impl D1Src<T, IOLSRC2>>,
         d2_2: Peri<'d, impl D2Src<T, IOLSRC2>>,
         d3_2: Peri<'d, impl D3Src<T, IOLSRC2>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
         dma: Peri<'d, D>,
         _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
         config: Config,
@@ -1132,23 +1276,23 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             IOLSRC1,
             #[cfg(octospim_v1)]
             Some(IOLSRC2),
-            SRC,
+            CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for octospi external chips
-    pub fn new_octospi<const IOLSRC: u8, const IOHSRC: u8, const SRC: u8, D: OctoDma<T>>(
+    pub fn new_octospi<const IOL_PGROUP: u8, const IOH_PGROUP: u8, const CTRL_PGROUP: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
-        d0: Peri<'d, impl D0Src<T, IOLSRC>>,
-        d1: Peri<'d, impl D1Src<T, IOLSRC>>,
-        d2: Peri<'d, impl D2Src<T, IOLSRC>>,
-        d3: Peri<'d, impl D3Src<T, IOLSRC>>,
-        d4: Peri<'d, impl D4Src<T, IOHSRC>>,
-        d5: Peri<'d, impl D5Src<T, IOHSRC>>,
-        d6: Peri<'d, impl D6Src<T, IOHSRC>>,
-        d7: Peri<'d, impl D7Src<T, IOHSRC>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
+        d0: Peri<'d, impl D0Src<T, IOL_PGROUP>>,
+        d1: Peri<'d, impl D1Src<T, IOL_PGROUP>>,
+        d2: Peri<'d, impl D2Src<T, IOL_PGROUP>>,
+        d3: Peri<'d, impl D3Src<T, IOL_PGROUP>>,
+        d4: Peri<'d, impl D4Src<T, IOH_PGROUP>>,
+        d5: Peri<'d, impl D5Src<T, IOH_PGROUP>>,
+        d6: Peri<'d, impl D6Src<T, IOH_PGROUP>>,
+        d7: Peri<'d, impl D7Src<T, IOH_PGROUP>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
         dma: Peri<'d, D>,
         _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
         config: Config,
@@ -1174,27 +1318,27 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             OspiWidth::OCTO,
             false,
             #[cfg(octospim_v1)]
-            IOLSRC,
+            IOL_PGROUP,
             #[cfg(octospim_v1)]
-            Some(IOHSRC),
-            SRC,
+            Some(IOH_PGROUP),
+            CTRL_PGROUP,
         )
     }
 
     /// Create new blocking OSPI driver for octospi external chips with DQS support
-    pub fn new_octospi_with_dqs<const IOLSRC: u8, const IOHSRC: u8, const SRC: u8, D: OctoDma<T>>(
+    pub fn new_octospi_with_dqs<const IOL_PGROUP: u8, const IOH_PGROUP: u8, const CTRL_PGROUP: u8, D: OctoDma<T>>(
         peri: Peri<'d, T>,
-        sck: Peri<'d, impl SckSrc<T, SRC>>,
-        d0: Peri<'d, impl D0Src<T, IOLSRC>>,
-        d1: Peri<'d, impl D1Src<T, IOLSRC>>,
-        d2: Peri<'d, impl D2Src<T, IOLSRC>>,
-        d3: Peri<'d, impl D3Src<T, IOLSRC>>,
-        d4: Peri<'d, impl D4Src<T, IOHSRC>>,
-        d5: Peri<'d, impl D5Src<T, IOHSRC>>,
-        d6: Peri<'d, impl D6Src<T, IOHSRC>>,
-        d7: Peri<'d, impl D7Src<T, IOHSRC>>,
-        nss: Peri<'d, impl NSSSrc<T, SRC>>,
-        dqs: Peri<'d, impl DQSSrc<T, SRC>>,
+        sck: Peri<'d, impl SckSrc<T, CTRL_PGROUP>>,
+        d0: Peri<'d, impl D0Src<T, IOL_PGROUP>>,
+        d1: Peri<'d, impl D1Src<T, IOL_PGROUP>>,
+        d2: Peri<'d, impl D2Src<T, IOL_PGROUP>>,
+        d3: Peri<'d, impl D3Src<T, IOL_PGROUP>>,
+        d4: Peri<'d, impl D4Src<T, IOH_PGROUP>>,
+        d5: Peri<'d, impl D5Src<T, IOH_PGROUP>>,
+        d6: Peri<'d, impl D6Src<T, IOH_PGROUP>>,
+        d7: Peri<'d, impl D7Src<T, IOH_PGROUP>>,
+        nss: Peri<'d, impl NSSSrc<T, CTRL_PGROUP>>,
+        dqs: Peri<'d, impl DQSSrc<T, CTRL_PGROUP>>,
         dma: Peri<'d, D>,
         _irq: impl crate::interrupt::typelevel::Binding<D::Interrupt, crate::dma::InterruptHandler<D>> + 'd,
         config: Config,
@@ -1220,10 +1364,10 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             OspiWidth::OCTO,
             false,
             #[cfg(octospim_v1)]
-            IOLSRC,
+            IOL_PGROUP,
             #[cfg(octospim_v1)]
-            Some(IOHSRC),
-            SRC,
+            Some(IOH_PGROUP),
+            CTRL_PGROUP,
         )
     }
 
@@ -1418,7 +1562,7 @@ pub trait Instance: SealedInstance + PeripheralType + RccPeripheral {}
 macro_rules! ospi_signal_src_trait {
     ($signal:ident) => {
         #[doc = concat!(stringify!($signal), " pin trait")]
-        pub trait $signal<T: Instance, const SRC: u8>: crate::gpio::Pin {
+        pub trait $signal<T: Instance, const CTRL_PGROUP: u8>: crate::gpio::Pin {
             #[cfg(not(afio))]
             #[doc = concat!("Get the AF number needed to use this pin as `", stringify!($signal), "`.")]
             fn af_num(&self) -> u8;
