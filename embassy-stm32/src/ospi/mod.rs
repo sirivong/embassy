@@ -52,23 +52,17 @@ use crate::{Peri, peripherals};
 
 #[allow(unused)]
 #[cfg(octospim_v1)]
-pub(crate) const OCTOSPIM_P1_LOW: u8 = 0b00;
+mod octospin_v1_constants {
+    pub(crate) const OCTOSPIM_P1_LOW: u8 = 0b00;
+    pub(crate) const OCTOSPIM_P1_HIGH: u8 = 0b01;
+    pub(crate) const OCTOSPIM_P2_LOW: u8 = 0b10;
+    pub(crate) const OCTOSPIM_P2_HIGH: u8 = 0b11;
+    pub(crate) const OCTOSPIM_P1_CTRL: u8 = 0b00;
+    pub(crate) const OCTOSPIM_P2_CTRL: u8 = 0b10;
+}
 #[allow(unused)]
 #[cfg(octospim_v1)]
-pub(crate) const OCTOSPIM_P1_HIGH: u8 = 0b01;
-#[allow(unused)]
-#[cfg(octospim_v1)]
-pub(crate) const OCTOSPIM_P2_LOW: u8 = 0b10;
-#[allow(unused)]
-#[cfg(octospim_v1)]
-pub(crate) const OCTOSPIM_P2_HIGH: u8 = 0b11;
-
-#[allow(unused)]
-#[cfg(octospim_v1)]
-pub(crate) const OCTOSPIM_P1_CTRL: u8 = 0b00;
-#[allow(unused)]
-#[cfg(octospim_v1)]
-pub(crate) const OCTOSPIM_P2_CTRL: u8 = 0b10;
+pub use octospin_v1_constants::*;
 
 /// OPSI driver config.
 #[derive(Clone, Copy)]
