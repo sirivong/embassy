@@ -10,7 +10,7 @@ pub use crate::pac::rcc::vals::{
 use crate::pac::{FLASH, RCC};
 #[cfg(all(peri_usb_otg_hs))]
 pub use crate::pac::{SYSCFG, syscfg::vals::Usbrefcksel};
-use crate::rcc::LSI_FREQ;
+use crate::rcc::{LSI_FREQ, LsConfig, LseConfig, LseDrive, LseMode, RtcClockSource, mux};
 use crate::time::Hertz;
 
 /// HSI speed
@@ -21,6 +21,7 @@ pub const HSE_FREQ: Hertz = Hertz(32_000_000);
 #[derive(Clone, Copy, Eq, PartialEq)]
 pub struct Hse {
     pub prescaler: HsePrescaler,
+    pub trim: Option<u8>,
 }
 
 #[derive(Clone, Copy)]
@@ -100,6 +101,52 @@ impl Config {
             voltage_scale: VoltageScale::Range2,
             mux: super::mux::ClockMux::default(),
         }
+    }
+
+    pub const fn new_wpan() -> Self {
+        let mut rcc = Self::new();
+
+        // Enable HSE (32 MHz external crystal) - REQUIRED for BLE radio
+        rcc.hse = Some(Hse {
+            prescaler: HsePrescaler::Div1,
+            trim: Some(0x0C),
+        });
+
+        // Enable LSE (32.768 kHz external crystal) - REQUIRED for BLE radio sleep timer
+        rcc.ls = LsConfig {
+            rtc: RtcClockSource::Lse,
+            lsi: false,
+            lse: Some(LseConfig {
+                frequency: Hertz(32_768),
+                mode: LseMode::Oscillator(LseDrive::MediumLow),
+                peripherals_clocked: true,
+            }),
+        };
+
+        // Configure PLL1 from HSE for system clock
+        // HSE = 32MHz (fixed for WBA), prediv /2 gives 16MHz to PLL input (must be 4-16MHz)
+        // VCO = 16MHz * 12 = 192MHz, PLLR = 192 / 2 = 96MHz system clock
+        rcc.pll1 = Some(Pll {
+            source: PllSource::Hse,
+            prediv: PllPreDiv::Div2,  // 32MHz / 2 = 16MHz to PLL input
+            mul: PllMul::Mul12,       // 16MHz * 12 = 192MHz VCO
+            divr: Some(PllDiv::Div2), // 192MHz / 2 = 96MHz system clock
+            divq: None,
+            divp: Some(PllDiv::Div12), // 192MHz / 12 = 16MHz for peripherals
+            frac: Some(0),
+        });
+
+        rcc.ahb_pre = AHBPrescaler::Div1;
+        rcc.apb1_pre = APBPrescaler::Div1;
+        rcc.apb2_pre = APBPrescaler::Div1;
+        rcc.apb7_pre = APBPrescaler::Div1;
+        rcc.ahb5_pre = AHB5Prescaler::Div4; // Radio bus: 96MHz / 4 = 24MHz
+        rcc.voltage_scale = VoltageScale::Range1;
+        rcc.sys = Sysclk::Pll1R;
+        rcc.mux.rngsel = mux::Rngsel::Hsi; // RNG clock from HSI (16 MHz)
+        rcc.mux.radiostsel = mux::Radiostsel::Lse;
+
+        rcc
     }
 }
 
@@ -190,6 +237,10 @@ pub(crate) unsafe fn init(config: Config) {
             w.set_hsepre(hse.prescaler);
         });
         while !RCC.cr().read().hserdy() {}
+
+        hse.trim.map(|trim| {
+            RCC.ecscr1().modify(|w| w.set_hsetrim(trim));
+        });
 
         HSE_FREQ
     });

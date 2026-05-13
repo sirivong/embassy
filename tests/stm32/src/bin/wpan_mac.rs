@@ -9,7 +9,7 @@ use common::*;
 use embassy_executor::Spawner;
 use embassy_stm32::bind_interrupts;
 use embassy_stm32::ipcc::{Config, ReceiveInterruptHandler, TransmitInterruptHandler};
-use embassy_stm32::rcc::WPAN_DEFAULT;
+use embassy_stm32::rcc::Config as RccConfig;
 use embassy_stm32_wpan::TlMbox;
 use embassy_stm32_wpan::mac::commands::{AssociateRequest, GetRequest, ResetRequest, SetRequest};
 use embassy_stm32_wpan::mac::event::MacEvent;
@@ -36,7 +36,7 @@ async fn run_mm_queue(mut memory_manager: mm::MemoryManager<'static>) {
 #[cfg_attr(not(feature = "stop"), embassy_executor::main)]
 async fn main(spawner: Spawner) {
     let mut config = config();
-    config.rcc = WPAN_DEFAULT;
+    config.rcc = RccConfig::new_wpan();
 
     let p = init_with_config(config);
     info!("Hello World!");

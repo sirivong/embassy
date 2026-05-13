@@ -10,7 +10,7 @@ use embassy_net::{Ipv6Cidr, StackResources, StaticConfigV6};
 use embassy_stm32::bind_interrupts;
 use embassy_stm32::ipcc::{Config, ReceiveInterruptHandler, TransmitInterruptHandler};
 use embassy_stm32::peripherals::RNG;
-use embassy_stm32::rcc::WPAN_DEFAULT;
+use embassy_stm32::rcc::Config as RccConfig;
 use embassy_stm32::rng::InterruptHandler as RngInterruptHandler;
 use embassy_stm32_wpan::TlMbox;
 use embassy_stm32_wpan::mac::{Driver, DriverState, Runner};
@@ -67,7 +67,7 @@ async fn main(spawner: Spawner) {
     */
 
     let mut config = embassy_stm32::Config::default();
-    config.rcc = WPAN_DEFAULT;
+    config.rcc = RccConfig::new_wpan();
     let p = embassy_stm32::init(config);
     info!("Hello World!");
 

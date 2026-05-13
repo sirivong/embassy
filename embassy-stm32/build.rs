@@ -705,6 +705,16 @@ fn main() {
         );
     }
 
+    if chip_name.starts_with("stm32wba") {
+        clock_gen.gen_mux(
+            "RADIOST",
+            &PeripheralRccRegister {
+                register: "BDCR",
+                field: "RADIOSTSEL",
+            },
+        );
+    }
+
     fn pascal_to_upper_snake(s: &str) -> String {
         let mut out = String::new();
         let chars: Vec<char> = s.chars().collect();
