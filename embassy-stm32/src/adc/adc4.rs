@@ -510,9 +510,21 @@ impl<'d, T: Instance<Regs = crate::pac::adc::Adc4>> super::Adc<'d, T> {
     ///
     /// `watchdog` selects which of the three hardware watchdogs to use. `channels` controls which
     /// ADC channels are monitored; see [`WatchdogChannels`] for which variants are valid for each
-    /// watchdog. `low_threshold` and `high_threshold` are raw ADC counts in `[0, 2^N − 1]` for
-    /// the currently configured resolution. The watchdog fires when a sample falls **outside**
-    /// `[low_threshold, high_threshold]`.
+    /// watchdog. `low_threshold` and `high_threshold` are raw ADC counts in the range
+    /// `[0, 2^N − 1]` for the currently configured resolution. The watchdog fires when a sample
+    /// falls **outside** `[low_threshold, high_threshold]`.
+    ///
+    /// ## Oversampling
+    ///
+    /// When oversampling is enabled via [`Adc::set_averaging_adc4`], the ADC hardware always
+    /// compares `ADC_DR[15:4]` (the 12 MSBs of the 16-bit data register) against the threshold,
+    /// per the reference manual.  With a typical averaging shift that yields a 12-bit result in
+    /// `DR[11:0]`, the effective comparison window is only 8 bits: `DR[11:4]` vs `HTx[7:0]` /
+    /// `LTx[7:0]`, and `HTx[11:8]` / `LTx[11:8]` must stay zero.
+    ///
+    /// This method automatically detects whether oversampling is active and scales the caller's
+    /// thresholds by `>> 4` before writing them to hardware, so you always pass thresholds in
+    /// the same 12-bit space as the sample values returned by [`AnalogWatchdog::monitor`].
     ///
     /// The returned [`AnalogWatchdog`] does **not** borrow the ADC, so you may use the ADC for
     /// DMA or other operations while the watchdog is active.  Call [`AnalogWatchdog::wait`] to
@@ -538,8 +550,20 @@ impl<'d, T: Instance<Regs = crate::pac::adc::Adc4>> super::Adc<'d, T> {
             low_threshold <= high_threshold,
             "low_threshold must be <= high_threshold"
         );
+
+        // When oversampling is active, AWD compares ADC_DR[15:4] against the threshold
+        // (RM: "comparison is performed on the most significant 12 bits of the 16-bit
+        // oversampled result ADC_DR[15:4]"). For the common case where OVSS equals the
+        // number of accumulation bits (averaging mode), DR holds a 12-bit result and the
+        // effective AWD window is DR[11:4] — only the upper 8 bits. Scale down by 4.
+        let (lt, ht) = if T::regs().cfgr2().read().ovse() {
+            (low_threshold >> 4, high_threshold >> 4)
+        } else {
+            (low_threshold, high_threshold)
+        };
+
         let index = watchdog.index();
-        AnalogWatchdog::<T>::setup_awd(watchdog, channels, low_threshold, high_threshold);
+        AnalogWatchdog::<T>::setup_awd(watchdog, channels, lt, ht);
         AnalogWatchdog::new(index)
     }
 }
