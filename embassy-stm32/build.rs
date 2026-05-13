@@ -1549,6 +1549,18 @@ fn main() {
             });
         }
 
+        if regs.kind == "dlybsd"
+            && let Some(peri) = p.name.strip_prefix("DLYB_")
+            && peripheral_map.contains_key(peri)
+        {
+            let peri = format_ident!("{}", peri);
+            let dlyb = format_ident!("{}", p.name);
+
+            g.extend(quote! {
+                impl_dlyb_instance!(#peri, #dlyb);
+            });
+        }
+
         for pin in p.pins {
             let mut key = (regs.kind, pin.signal);
 
@@ -2235,15 +2247,6 @@ fn main() {
             let adc_common = adc_common.map(|p| p.name).unwrap_or("none");
             let row = vec![p.name.to_string(), adc_common.to_string(), "adc".to_string()];
             adc_table.push(row);
-        }
-
-        if regs.kind == "dlybsd"
-            && let Some(name) = p.name.strip_prefix("DLYB_")
-            && !peripheral_map.contains_key(name)
-        {
-            // If DLYB_SDMMC1 exists and SDMMC1 does not exist, then skip it
-
-            continue;
         }
 
         for irq in p.interrupts {

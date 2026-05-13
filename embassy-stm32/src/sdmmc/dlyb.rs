@@ -1,45 +1,9 @@
 //! DLYB tuning helpers used by SDMMC for SDR50 / SDR104 sampling.
 //! Lock-mode procedure per RM0486 §31.4.4.
 
-use embassy_hal_internal::PeripheralType;
-
-use super::{Error, Instance};
+use crate::sdmmc::Error;
 
 const POLL_LIMIT: u32 = 100_000;
-
-#[allow(private_bounds)]
-pub trait DlybInstance<T: Instance>: SealedDlybInstance<T> + PeripheralType + 'static {}
-pub(crate) trait SealedDlybInstance<T: Instance> {
-    fn regs() -> crate::pac::dlybsd::Dlybsd;
-    fn release_dll_reset();
-}
-
-foreach_peripheral!(
-    (dlybsd, DLYB_SDMMC1) => {
-        impl SealedDlybInstance<crate::peripherals::SDMMC1> for crate::peripherals::DLYB_SDMMC1 {
-            fn regs() -> crate::pac::dlybsd::Dlybsd {
-                crate::pac::DLYB_SDMMC1
-            }
-            fn release_dll_reset() {
-                crate::pac::RCC.miscrstr().modify(|w| w.set_sdmmc1dllrst(false));
-            }
-        }
-
-        impl DlybInstance<crate::peripherals::SDMMC1> for crate::peripherals::DLYB_SDMMC1 {}
-    };
-    (dlybsd, DLYB_SDMMC2) => {
-        impl SealedDlybInstance<crate::peripherals::SDMMC2> for crate::peripherals::DLYB_SDMMC2 {
-            fn regs() -> crate::pac::dlybsd::Dlybsd {
-                crate::pac::DLYB_SDMMC2
-            }
-            fn release_dll_reset() {
-                crate::pac::RCC.miscrstr().modify(|w| w.set_sdmmc2dllrst(false));
-            }
-        }
-
-        impl DlybInstance<crate::peripherals::SDMMC2> for crate::peripherals::DLYB_SDMMC2 {}
-    };
-);
 
 pub(crate) struct Dlyb {
     regs: crate::pac::dlybsd::Dlybsd,

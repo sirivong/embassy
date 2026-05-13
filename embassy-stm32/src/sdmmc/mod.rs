@@ -17,6 +17,8 @@ use sdio_host::sd::{BusWidth, CID, CSD, CardStatus};
 #[cfg(sdmmc_uhs)]
 use sdio_host::sd_cmd;
 
+#[cfg(sdmmc_dlyb)]
+use crate::dlyb::DlybInstance;
 #[cfg(sdmmc_v1)]
 use crate::dma::ChannelAndRequest;
 #[cfg(sdmmc_uhs)]
@@ -911,7 +913,7 @@ impl<'d> Sdmmc<'d> {
 impl<'d> Sdmmc<'d> {
     /// 4-lane SD with UHS-I vswitch and a DLYB block for RX tap tuning.
     /// Use on instances where CKIN is not routed (e.g. STM32N6 SDMMC2).
-    pub fn new_4bit_with_vswitch_dlyb<T: Instance, D: dlyb::DlybInstance<T>>(
+    pub fn new_4bit_with_vswitch_dlyb<T: Instance, D: DlybInstance<T>>(
         sdmmc: Peri<'d, T>,
         _irq: impl interrupt::typelevel::Binding<T::Interrupt, InterruptHandler<T>> + 'd,
         clk: Peri<'d, impl CkPin<T>>,
@@ -926,10 +928,9 @@ impl<'d> Sdmmc<'d> {
     ) -> Self {
         // DLL is held in reset out of POR; release it so the DLYB can
         // start lock acquisition once enabled.
-        <D as dlyb::SealedDlybInstance<T>>::release_dll_reset();
-        let slot = DlybSlot {
-            regs: <D as dlyb::SealedDlybInstance<T>>::regs(),
-        };
+        D::reset_and_enable();
+
+        let slot = DlybSlot { regs: D::regs() };
         Self::new_inner(
             sdmmc,
             new_pin!(clk, CLK_AF).unwrap(),
