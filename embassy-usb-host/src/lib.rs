@@ -277,7 +277,7 @@ impl<'d, A: UsbHostAllocator<'d>> BusHandle<'d, A> {
         let ep0_info = EndpointInfo {
             addr: EndpointAddress::from_parts(0, UsbDirection::In),
             ep_type: EndpointType::Control,
-            max_packet_size: route.device_speed().max_packet_size(),
+            max_packet_size: 8,
             interval_ms: 0,
         };
 
