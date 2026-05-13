@@ -43,15 +43,13 @@
 /// 2.011047 [INFO ] Result Attempts: 20, Successes: 20 (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:113)
 /// 2.011047 [INFO ] END (ospim_unusual_pinout src/bin/ospim_unusual_pinout.rs:114)
 /// ```
-
-
 use defmt::info;
 use embassy_executor::Spawner;
 use embassy_stm32::gpio::{Level, Output, Speed};
 use embassy_stm32::mode::Blocking;
 use embassy_stm32::ospi::{
-    AddressSize, ChipSelectHighTime, FIFOThresholdLevel, Instance, MemorySize, MemoryType, Ospi,
-    OspiWidth, TransferConfig, WrapSize,
+    AddressSize, ChipSelectHighTime, FIFOThresholdLevel, Instance, MemorySize, MemoryType, Ospi, OspiWidth,
+    TransferConfig, WrapSize,
 };
 use embassy_time::Timer;
 use {defmt_rtt as _, panic_probe as _};
@@ -94,10 +92,10 @@ async fn main(_spawner: Spawner) {
 
     let ospi2 = embassy_stm32::ospi::Ospi::new_blocking_quadspi(
         p.OCTOSPI2,
-        p.PF4, // P2_CLK
-        p.PD4, // P1_IO4
-        p.PH3, // P1_IO5
-        p.PC3, // P1_IO6
+        p.PF4,  // P2_CLK
+        p.PD4,  // P1_IO4
+        p.PH3,  // P1_IO5
+        p.PC3,  // P1_IO6
         p.PE10, // P1_IO7
         p.PG12, // P2_NCS
         ospi_config,
@@ -110,16 +108,16 @@ async fn main(_spawner: Spawner) {
     let ospi1 = embassy_stm32::ospi::Ospi::new_blocking_octospi_with_dqs(
         p.OCTOSPI1,
         p.PF10, // P1_CLK
-        p.PG0, // P2_IO4
-        p.PG1, // P2_IO5
+        p.PG0,  // P2_IO4
+        p.PG1,  // P2_IO5
         p.PG10, // P2_IO6
         p.PG11, // P2_IO7
-        p.PF0, // P2_IO0
-        p.PF1, // P2_IO1
-        p.PF2, // P2_IO2
-        p.PF3, // P2_IO3
+        p.PF0,  // P2_IO0
+        p.PF1,  // P2_IO1
+        p.PF2,  // P2_IO2
+        p.PF3,  // P2_IO3
         p.PC11, // P1_NCS
-        p.PA1, // P1_DQS
+        p.PA1,  // P1_DQS
         ospi_config,
     );
 
@@ -132,7 +130,6 @@ async fn main(_spawner: Spawner) {
     const ATTEMPTS: u32 = 20;
 
     for _ in 0..ATTEMPTS {
-
         let flash_id = flash.read_id();
         info!("FLASH ID: {=[u8]:x}", flash_id);
 
@@ -184,18 +181,16 @@ impl<I: Instance> FlashMemory<I> {
     }
 }
 
-
 mod rcc_setup {
 
+    use embassy_stm32::rcc::mux::Fmcsel;
     use embassy_stm32::rcc::{Hse, HseMode, *};
     use embassy_stm32::time::Hertz;
     use embassy_stm32::{Config, Peripherals};
-    use embassy_stm32::rcc::mux::Fmcsel;
 
     /// Sets up clocks for the stm32h735g mcu
     /// change this if you plan to use a different microcontroller
     pub fn stm32h735g_init() -> Peripherals {
-
         // setup power and clocks for an stm32h735g-dk run from an external 25 Mhz external oscillator
         let mut config = Config::default();
         config.rcc.hse = Some(Hse {
@@ -206,16 +201,16 @@ mod rcc_setup {
         config.rcc.csi = false;
         config.rcc.pll1 = Some(Pll {
             source: PllSource::Hse,
-            prediv: PllPreDiv::Div4, // 12.5Mhz
-            mul: PllMul::Mul44,     // 550Mhz
+            prediv: PllPreDiv::Div4,  // 12.5Mhz
+            mul: PllMul::Mul44,       // 550Mhz
             divp: Some(PllDiv::Div1), // 550Mhz
             divq: Some(PllDiv::Div4), // 110Mhz
             divr: Some(PllDiv::Div2), // 275Mhz
         });
         config.rcc.pll2 = Some(Pll {
             source: PllSource::Hse,
-            prediv: PllPreDiv::Div5, // 10Mhz
-            mul: PllMul::Mul40,      // 400Mhz
+            prediv: PllPreDiv::Div5,  // 10Mhz
+            mul: PllMul::Mul40,       // 400Mhz
             divp: Some(PllDiv::Div5), // 80Mhz
             divq: Some(PllDiv::Div2), // 200Mhz
             divr: Some(PllDiv::Div3), // 133.33Mhz (for OSPI)
@@ -225,7 +220,7 @@ mod rcc_setup {
         config.rcc.pll3 = Some(Pll {
             source: PllSource::Hse,
             prediv: PllPreDiv::Div25, // 2Mhz
-            mul: PllMul::Mul96,     // 192Mhz
+            mul: PllMul::Mul96,       // 192Mhz
             divp: Some(PllDiv::Div1), // 192Mhz
             divq: Some(PllDiv::Div8), // 24Mhz
             divr: Some(PllDiv::Div4), // 48Mhz

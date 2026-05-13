@@ -342,20 +342,12 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
 
     #[cfg(octospim_v1)]
     fn octospim_low_data_src() -> u8 {
-        if T::OCTOSPI_IDX == 1 {
-            0b00
-        } else {
-            0b10
-        }
+        if T::OCTOSPI_IDX == 1 { 0b00 } else { 0b10 }
     }
 
     #[cfg(octospim_v1)]
     fn octospim_high_data_src() -> u8 {
-        if T::OCTOSPI_IDX == 1 {
-            0b01
-        } else {
-            0b11
-        }
+        if T::OCTOSPI_IDX == 1 { 0b01 } else { 0b11 }
     }
 
     #[cfg(octospim_v1)]
@@ -478,7 +470,10 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
             crate::pac::RCC.ahb3enr().modify(|w| w.set_iomngren(true));
 
             let previously_enabled_instances = Self::disable_octospis_for_octospim_config();
-            info!("OCTOSPI1_ENABLED: {:?}, OCTOSPI2_ENABLED: {:?}", previously_enabled_instances.0, previously_enabled_instances.1);
+            info!(
+                "OCTOSPI1_ENABLED: {:?}, OCTOSPI2_ENABLED: {:?}",
+                previously_enabled_instances.0, previously_enabled_instances.1
+            );
 
             // OctoSPI IO Manager has been enabled before
             T::OCTOSPIM_REGS.cr().modify(|w| {
@@ -490,7 +485,10 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
             Self::configure_octospim_data_group(iol_pgroup, Self::octospim_low_data_src());
 
             if dual_quad {
-                debug_assert!(ioh_pgroup.is_some(), "dual-quad must set ioh_pgroup for the second flash chip");
+                debug_assert!(
+                    ioh_pgroup.is_some(),
+                    "dual-quad must set ioh_pgroup for the second flash chip"
+                );
             }
 
             if let Some(ioh_pgroup) = ioh_pgroup {
