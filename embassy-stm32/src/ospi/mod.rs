@@ -303,6 +303,44 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
     }
 
     #[cfg(octospim_v1)]
+    fn disable_octospis_for_octospim_config() -> (bool, bool) {
+        let octospi1_enabled = crate::peripherals::OCTOSPI1::REGS.cr().read().en();
+
+        #[cfg(all(octospim_v1, peri_octospi2))]
+        let octospi2_enabled = crate::peripherals::OCTOSPI2::REGS.cr().read().en();
+
+        #[cfg(not(all(octospim_v1, peri_octospi2)))]
+        let octospi2_enabled = false;
+
+        crate::peripherals::OCTOSPI1::REGS.cr().modify(|w| {
+            w.set_en(false);
+        });
+
+        #[cfg(all(octospim_v1, peri_octospi2))]
+        crate::peripherals::OCTOSPI2::REGS.cr().modify(|w| {
+            w.set_en(false);
+        });
+
+        (octospi1_enabled, octospi2_enabled)
+    }
+
+    #[cfg(octospim_v1)]
+    fn restore_octospis_after_config(octospi1_was_enabled: bool, octospi2_was_enabled: bool) {
+        if T::OCTOSPI_IDX == 1 || octospi1_was_enabled {
+            crate::peripherals::OCTOSPI1::REGS.cr().modify(|w| {
+                w.set_en(true);
+            });
+        }
+
+        #[cfg(all(octospim_v1, peri_octospi2))]
+        if T::OCTOSPI_IDX == 2 || octospi2_was_enabled {
+            crate::peripherals::OCTOSPI2::REGS.cr().modify(|w| {
+                w.set_en(true);
+            });
+        }
+    }
+
+    #[cfg(octospim_v1)]
     fn octospim_low_data_src() -> u8 {
         if T::OCTOSPI_IDX == 1 {
             0b00
@@ -334,8 +372,6 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
     fn octospim_uses_high_group(physical_group: u8) -> bool {
         physical_group & 0b01 != 0
     }
-
-    // ... existing code ...
 
     #[cfg(octospim_v1)]
     fn configure_octospim_data_group(physical_group: u8, data_src: u8) {
@@ -423,7 +459,7 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
         info!("OCTOSPI_IDX: {:?}", T::OCTOSPI_IDX);
 
         #[cfg(octospim_v1)]
-        {
+        let (octospi1_was_enabled, octospi2_was_enabled) = {
             info!("IOL_PGROUP: 0b{:02b}", iol_pgroup);
             if let Some(ioh_pgroup) = ioh_pgroup {
                 info!("IOH_PGROUP: 0b{:02b}", ioh_pgroup);
@@ -431,7 +467,6 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
                 info!("IOH_PGROUP: N/A");
             }
             info!("CLK/NCS/DQS CTRL_PGROUP: 0b{:02b}", ctrl_pgroup);
-
 
             // RCC for octospim should be enabled before writing register
             #[cfg(stm32l4)]
@@ -441,20 +476,14 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
             #[cfg(not(any(stm32l4, stm32u5)))]
             crate::pac::RCC.ahb3enr().modify(|w| w.set_iomngren(true));
 
-            // Both OCTOSPIn peripherals must be disabled before configuring OCTOSPIM
-            crate::peripherals::OCTOSPI1::REGS.cr().modify(|w| {
-                w.set_en(false);
-            });
-            crate::peripherals::OCTOSPI2::REGS.cr().modify(|w| {
-                w.set_en(false);
-            });
+            let previously_enabled_instances = Self::disable_octospis_for_octospim_config();
+            info!("OCTOSPI1_ENABLED: {:?}, OCTOSPI2_ENABLED: {:?}", previously_enabled_instances.0, previously_enabled_instances.1);
 
             // OctoSPI IO Manager has been enabled before
             T::OCTOSPIM_REGS.cr().modify(|w| {
                 w.set_muxen(false);
                 w.set_req2ack_time(0xff);
             });
-
 
             Self::configure_octospim_control_group(ctrl_pgroup, dqs.is_some());
             Self::configure_octospim_data_group(iol_pgroup, Self::octospim_low_data_src());
@@ -467,39 +496,15 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
                 Self::configure_octospim_data_group(ioh_pgroup, Self::octospim_high_data_src());
             }
 
-            // T::OCTOSPIM_REGS.p1cr().modify(|w| {
-            //     w.set_clksrc(false);
-            //     w.set_dqssrc(false);
-            //     w.set_ncssrc(false);
-            //     w.set_clken(false);
-            //     w.set_dqsen(false);
-            //     w.set_ncsen(false);
-            //     w.set_iolsrc(0);
-            //     w.set_iohsrc(OCTOSPIM_P2_LOW);
-            //     w.set_iolen(false);
-            //     w.set_iohen(true);
-            // });
-            //
-            // T::OCTOSPIM_REGS.p2cr().modify(|w| {
-            //     w.set_clksrc(true);
-            //     w.set_dqssrc(false);
-            //     w.set_ncssrc(true);
-            //     w.set_clken(true);
-            //     w.set_dqsen(false);
-            //     w.set_ncsen(true);
-            //     w.set_iolsrc(0);
-            //     w.set_iohsrc(0);
-            //     w.set_iolen(false);
-            //     w.set_iohen(false);
-            // });
-
             let cr = T::OCTOSPIM_REGS.cr().read();
             let p1cr = T::OCTOSPIM_REGS.p1cr().read();
             let p2cr = T::OCTOSPIM_REGS.p2cr().read();
             info!("OCTOSPIM_CR: 0x{:08X} - {:?}", cr.0, cr);
             info!("OCTOSPIM_P1CR: 0x{:08X} - {:?}", p1cr.0, p1cr);
             info!("OCTOSPIM_P2CR: 0x{:08X} - {:?}", p2cr.0, p2cr);
-        }
+
+            previously_enabled_instances
+        };
 
         // System configuration
         rcc::enable_and_reset::<T>();
@@ -564,14 +569,8 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
 
         #[cfg(octospim_v1)]
         {
-            crate::peripherals::OCTOSPI1::REGS.cr().modify(|w| {
-                w.set_en(true);
-            });
-            crate::peripherals::OCTOSPI2::REGS.cr().modify(|w| {
-                w.set_en(true);
-            });
+            Self::restore_octospis_after_config(octospi1_was_enabled, octospi2_was_enabled);
         }
-
 
         // Free running clock needs to be set after peripheral enable
         if config.free_running_clock {
