@@ -16,6 +16,7 @@ use embassy_usb_driver::{Direction, EndpointInfo, EndpointType, Speed};
 use crate::control::{ControlPipeExt, ControlType, Recipient, RequestType, SetupPacket};
 use crate::descriptor::{
     DEFAULT_MAX_DESCRIPTOR_SIZE, DescriptorError, InterfaceDescriptor, USBDescriptor, VariableSizeDescriptor,
+    WritableDescriptor,
 };
 use crate::handler::{BusRoute, EnumerationInfo, HandlerEvent, RegisterError};
 use crate::{BusHandle, EnumerationError};
@@ -412,7 +413,7 @@ impl VariableSizeDescriptor for HubDescriptor {
         }
         let len = bytes[0] as usize;
         let port_num = bytes[2] as usize;
-        len == 6 + 2 * Ord::max(1, port_num.div_ceil(u8::BITS as usize))
+        len == 7 + 2 * Ord::max(1, port_num.div_ceil(u8::BITS as usize))
     }
 }
 
@@ -447,6 +448,21 @@ impl USBDescriptor for HubDescriptor {
             device_removable,
             port_power_ctrl_mask,
         })
+    }
+}
+
+impl WritableDescriptor for HubDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        let n = Ord::max(1, self.port_num.div_ceil(u8::BITS as u8));
+        Self::prepare_bytes(bytes, 7 + 2 * n)?;
+        bytes[2] = self.port_num;
+        [bytes[3], bytes[4]] = self.characteristics.to_le_bytes();
+        bytes[5] = self.power_on_delay;
+        bytes[6] = self.max_current;
+        let n = n as usize;
+        bytes[7..7 + n].copy_from_slice(&self.device_removable[..n]);
+        bytes[7 + n..7 + 2 * n].copy_from_slice(&self.port_power_ctrl_mask[..n]);
+        Ok(bytes[0] as usize)
     }
 }
 
@@ -568,7 +584,7 @@ impl From<PortStatus> for Speed {
 
 #[cfg(test)]
 pub mod tests {
-    use super::HubInterrupt;
+    use super::*;
 
     #[test]
     fn test_hub_interrupt_0() {
@@ -626,5 +642,35 @@ pub mod tests {
         // empty byte
         assert_eq!(changes.take_port_change(), Some(22));
         assert_eq!(changes.take_port_change(), None);
+    }
+
+    #[test]
+    fn roundtrip_hub_descriptor() {
+        let descriptor = HubDescriptor {
+            port_num: 0x11,
+            characteristics: 0x2233,
+            power_on_delay: 0x44,
+            max_current: 0x55,
+            device_removable: {
+                let mut device_removable = [0u8; _];
+                device_removable[0] = 0b1111_1110; // 0x1-0x7
+                device_removable[1] = 0b1111_1111; // 0x8-0xf
+                device_removable[2] = 0b0000_0011; // 0x10-0x11
+                device_removable
+            },
+            port_power_ctrl_mask: {
+                let mut port_power_ctrl_mask = [0u8; _];
+                port_power_ctrl_mask[0] = 0b1111_1111; // 0x0-0x7
+                port_power_ctrl_mask[1] = 0b1111_1111; // 0x8-0xf
+                port_power_ctrl_mask[2] = 0b0000_0011; // 0x10-0x11
+                port_power_ctrl_mask
+            },
+        };
+        let mut bytes = [0u8; HubDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(7 + 2 * 0x11usize.div_ceil(u8::BITS as usize))
+        );
+        assert_eq!(HubDescriptor::try_from_bytes(&bytes), Ok(descriptor));
     }
 }

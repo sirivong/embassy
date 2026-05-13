@@ -8,6 +8,7 @@ use crate::descriptor::descriptor_type::{CS_ENDPOINT, CS_INTERFACE, INTERFACE_AS
 use crate::descriptor::{
     ConfigurationDescriptorChain, DescriptorError, DescriptorVisitor, EndpointDescriptor, ExtendableDescriptor,
     InterfaceDescriptor, InterfaceDescriptorChain, StringIndex, USBDescriptor, VariableSizeDescriptor, VisitError,
+    WritableDescriptor,
 };
 
 const MAX_AUDIO_STREAMING_INTERFACES: usize = 16;
@@ -300,6 +301,19 @@ impl USBDescriptor for InterfaceAssociationDescriptor {
     }
 }
 
+impl WritableDescriptor for InterfaceAssociationDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[2] = self.first_interface;
+        bytes[3] = self.num_interfaces;
+        bytes[4] = self.class;
+        bytes[5] = self.subclass;
+        bytes[6] = self.protocol;
+        bytes[7] = self.interface_name;
+        Ok(bytes[0] as usize)
+    }
+}
+
 impl InterfaceAssociationDescriptor {
     /// Returns true if this interface association is for an audio function.
     pub fn is_audio_association(&self) -> bool {
@@ -452,6 +466,17 @@ impl USBDescriptor for ClockDescriptor {
     }
 }
 
+impl WritableDescriptor for ClockDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        let len = match self {
+            ClockDescriptor::Source(descriptor) => descriptor.write_to_bytes(bytes)?,
+            ClockDescriptor::Selector(descriptor) => descriptor.write_to_bytes(bytes)?,
+            ClockDescriptor::Multiplier(descriptor) => descriptor.write_to_bytes(bytes)?,
+        };
+        Ok(len)
+    }
+}
+
 impl ClockDescriptor {
     /// Returns the clock ID for this descriptor.
     pub fn clock_id(&self) -> u8 {
@@ -498,6 +523,18 @@ impl USBDescriptor for ClockSourceDescriptor {
             associated_terminal: bytes[6],
             clock_name: bytes[7],
         })
+    }
+}
+
+impl WritableDescriptor for ClockSourceDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[3] = self.clock_id;
+        bytes[4] = self.attributes_bitmap;
+        bytes[5] = self.controls_bitmap;
+        bytes[6] = self.associated_terminal;
+        bytes[7] = self.clock_name;
+        Ok(bytes[0] as usize)
     }
 }
 
@@ -566,6 +603,22 @@ impl USBDescriptor for ClockSelectorDescriptor {
     }
 }
 
+impl WritableDescriptor for ClockSelectorDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        let num_source_ids = u8::try_from(self.source_ids.len()).map_err(|_| AudioInterfaceError::InvalidDescriptor)?;
+        if num_source_ids > Self::SUPPORTED_SOURCE_IDS {
+            return Err(AudioInterfaceError::InvalidDescriptor);
+        }
+        Self::prepare_bytes(bytes, 7 + num_source_ids)?;
+        bytes[3] = self.clock_id;
+        bytes[4] = num_source_ids;
+        bytes[5..5 + num_source_ids as usize].copy_from_slice(self.source_ids.as_slice());
+        bytes[5 + num_source_ids as usize] = self.controls_bitmap;
+        bytes[6 + num_source_ids as usize] = self.clock_name;
+        Ok(bytes[0] as usize)
+    }
+}
+
 /// Clock multiplier descriptor for frequency multiplication. (USB Audio Devices 2.0 §4.7.2.3)
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -601,6 +654,17 @@ impl USBDescriptor for ClockMultiplierDescriptor {
     }
 }
 
+impl WritableDescriptor for ClockMultiplierDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[3] = self.clock_id;
+        bytes[4] = self.source_id;
+        bytes[5] = self.controls_bitmap;
+        bytes[6] = self.clock_name;
+        Ok(bytes[0] as usize)
+    }
+}
+
 /// Enumeration of terminal descriptor types.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -627,6 +691,15 @@ impl USBDescriptor for TerminalDescriptor {
             ac_descriptor::INPUT_TERMINAL => Ok(Self::Input(InputTerminalDescriptor::try_from_bytes(bytes)?)),
             ac_descriptor::OUTPUT_TERMINAL => Ok(Self::Output(OutputTerminalDescriptor::try_from_bytes(bytes)?)),
             _ => Err(DescriptorError::BadDescriptorType),
+        }
+    }
+}
+
+impl WritableDescriptor for TerminalDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        match self {
+            Self::Input(descriptor) => descriptor.write_to_bytes(bytes),
+            Self::Output(descriptor) => descriptor.write_to_bytes(bytes),
         }
     }
 }
@@ -759,56 +832,113 @@ pub enum TerminalType {
     AvcStream,
 }
 
-fn terminal_type_from_u16(terminal_type: u16) -> TerminalType {
-    use TerminalType::*;
+impl From<u16> for TerminalType {
+    fn from(terminal_type: u16) -> TerminalType {
+        use TerminalType::*;
 
-    use crate::class::uac::codes::terminal_type::*;
+        use crate::class::uac::codes::terminal_type::*;
 
-    match terminal_type {
-        usb::UNDEFINED => UsbUndefined,
-        usb::STREAMING => UsbStreaming,
-        usb::VENDOR_SPECIFIC => UsbVendorSpecific,
+        match terminal_type {
+            usb::UNDEFINED => UsbUndefined,
+            usb::STREAMING => UsbStreaming,
+            usb::VENDOR_SPECIFIC => UsbVendorSpecific,
 
-        input::UNDEFINED => InputUndefined,
-        input::MICROPHONE => Microphone,
-        input::DESKTOP_MICROPHONE => DesktopMicrophone,
-        input::PERSONAL_MICROPHONE => PersonalMicrophone,
-        input::OMNI_DIRECTIONAL_MICROPHONE => OmniMicrophone,
-        input::MICROPHONE_ARRAY => MicrophoneArray,
-        input::PROCESSING_MICROPHONE_ARRAY => ProcessingMicrophoneArray,
+            input::UNDEFINED => InputUndefined,
+            input::MICROPHONE => Microphone,
+            input::DESKTOP_MICROPHONE => DesktopMicrophone,
+            input::PERSONAL_MICROPHONE => PersonalMicrophone,
+            input::OMNI_DIRECTIONAL_MICROPHONE => OmniMicrophone,
+            input::MICROPHONE_ARRAY => MicrophoneArray,
+            input::PROCESSING_MICROPHONE_ARRAY => ProcessingMicrophoneArray,
 
-        output::UNDEFINED => OutputUndefined,
-        output::SPEAKER => Speaker,
-        output::HEADPHONES => Headphones,
-        output::HEAD_MOUNTED_DISPLAY_AUDIO => HeadMountedDisplay,
-        output::DESKTOP_SPEAKER => DesktopSpeaker,
-        output::ROOM_SPEAKER => RoomSpeaker,
-        output::COMMUNICATION_SPEAKER => CommunicationSpeaker,
-        output::LOW_FREQUENCY_EFFECTS_SPEAKER => LowFrequencyEffectsSpeaker,
+            output::UNDEFINED => OutputUndefined,
+            output::SPEAKER => Speaker,
+            output::HEADPHONES => Headphones,
+            output::HEAD_MOUNTED_DISPLAY_AUDIO => HeadMountedDisplay,
+            output::DESKTOP_SPEAKER => DesktopSpeaker,
+            output::ROOM_SPEAKER => RoomSpeaker,
+            output::COMMUNICATION_SPEAKER => CommunicationSpeaker,
+            output::LOW_FREQUENCY_EFFECTS_SPEAKER => LowFrequencyEffectsSpeaker,
 
-        bidirectional::UNDEFINED => BiDirectionalUndefined,
-        bidirectional::HANDSET => Handset,
-        bidirectional::HEADSET => Headset,
-        bidirectional::SPEAKERPHONE_NO_ECHO => SpeakerPhone,
-        bidirectional::ECHO_SUPPRESSING_SPEAKERPHONE => EchoSuppressing,
-        bidirectional::ECHO_CANCELING_SPEAKERPHONE => EchoCanceling,
+            bidirectional::UNDEFINED => BiDirectionalUndefined,
+            bidirectional::HANDSET => Handset,
+            bidirectional::HEADSET => Headset,
+            bidirectional::SPEAKERPHONE_NO_ECHO => SpeakerPhone,
+            bidirectional::ECHO_SUPPRESSING_SPEAKERPHONE => EchoSuppressing,
+            bidirectional::ECHO_CANCELING_SPEAKERPHONE => EchoCanceling,
 
-        telephony::UNDEFINED => TelephonyUndefined,
-        telephony::PHONE_LINE => PhoneLine,
-        telephony::TELEPHONE => Telephone,
-        telephony::DOWN_LINE_PHONE => DownLinePhone,
+            telephony::UNDEFINED => TelephonyUndefined,
+            telephony::PHONE_LINE => PhoneLine,
+            telephony::TELEPHONE => Telephone,
+            telephony::DOWN_LINE_PHONE => DownLinePhone,
 
-        external::UNDEFINED => ExternalUndefined,
-        external::ANALOG_CONNECTOR => AnalogConnector,
-        external::DIGITAL_AUDIO_INTERFACE => DigitalAudioInterface,
-        external::LINE_CONNECTOR => LineConnector,
-        external::LEGACY_AUDIO_CONNECTOR => LegacyAudioConnector,
-        external::SPDIF_INTERFACE => SpdifInterface,
-        external::DA_STREAM_1394 => Da1394Stream,
-        external::DV_STREAM_SOUNDTRACK_1394 => DvdAudioStream,
-        external::ADAT_LIGHTPIPE => AvcStream,
+            external::UNDEFINED => ExternalUndefined,
+            external::ANALOG_CONNECTOR => AnalogConnector,
+            external::DIGITAL_AUDIO_INTERFACE => DigitalAudioInterface,
+            external::LINE_CONNECTOR => LineConnector,
+            external::LEGACY_AUDIO_CONNECTOR => LegacyAudioConnector,
+            external::SPDIF_INTERFACE => SpdifInterface,
+            external::DA_STREAM_1394 => Da1394Stream,
+            external::DV_STREAM_SOUNDTRACK_1394 => DvdAudioStream,
+            external::ADAT_LIGHTPIPE => AvcStream,
 
-        _ => Unknown(terminal_type),
+            _ => Unknown(terminal_type),
+        }
+    }
+}
+
+impl From<TerminalType> for u16 {
+    fn from(terminal_type: TerminalType) -> u16 {
+        use TerminalType::*;
+
+        use crate::class::uac::codes::terminal_type::*;
+
+        match terminal_type {
+            UsbUndefined => usb::UNDEFINED,
+            UsbStreaming => usb::STREAMING,
+            UsbVendorSpecific => usb::VENDOR_SPECIFIC,
+
+            InputUndefined => input::UNDEFINED,
+            Microphone => input::MICROPHONE,
+            DesktopMicrophone => input::DESKTOP_MICROPHONE,
+            PersonalMicrophone => input::PERSONAL_MICROPHONE,
+            OmniMicrophone => input::OMNI_DIRECTIONAL_MICROPHONE,
+            MicrophoneArray => input::MICROPHONE_ARRAY,
+            ProcessingMicrophoneArray => input::PROCESSING_MICROPHONE_ARRAY,
+
+            OutputUndefined => output::UNDEFINED,
+            Speaker => output::SPEAKER,
+            Headphones => output::HEADPHONES,
+            HeadMountedDisplay => output::HEAD_MOUNTED_DISPLAY_AUDIO,
+            DesktopSpeaker => output::DESKTOP_SPEAKER,
+            RoomSpeaker => output::ROOM_SPEAKER,
+            CommunicationSpeaker => output::COMMUNICATION_SPEAKER,
+            LowFrequencyEffectsSpeaker => output::LOW_FREQUENCY_EFFECTS_SPEAKER,
+
+            BiDirectionalUndefined => bidirectional::UNDEFINED,
+            Handset => bidirectional::HANDSET,
+            Headset => bidirectional::HEADSET,
+            SpeakerPhone => bidirectional::SPEAKERPHONE_NO_ECHO,
+            EchoSuppressing => bidirectional::ECHO_SUPPRESSING_SPEAKERPHONE,
+            EchoCanceling => bidirectional::ECHO_CANCELING_SPEAKERPHONE,
+
+            TelephonyUndefined => telephony::UNDEFINED,
+            PhoneLine => telephony::PHONE_LINE,
+            Telephone => telephony::TELEPHONE,
+            DownLinePhone => telephony::DOWN_LINE_PHONE,
+
+            ExternalUndefined => external::UNDEFINED,
+            AnalogConnector => external::ANALOG_CONNECTOR,
+            DigitalAudioInterface => external::DIGITAL_AUDIO_INTERFACE,
+            LineConnector => external::LINE_CONNECTOR,
+            LegacyAudioConnector => external::LEGACY_AUDIO_CONNECTOR,
+            SpdifInterface => external::SPDIF_INTERFACE,
+            Da1394Stream => external::DA_STREAM_1394,
+            DvdAudioStream => external::DV_STREAM_SOUNDTRACK_1394,
+            AvcStream => external::ADAT_LIGHTPIPE,
+
+            Unknown(terminal_type) => terminal_type,
+        }
     }
 }
 
@@ -850,7 +980,7 @@ impl USBDescriptor for InputTerminalDescriptor {
         Self::match_bytes(bytes)?;
         Ok(Self {
             terminal_id: bytes[3],
-            terminal_type: terminal_type_from_u16(u16::from_le_bytes([bytes[4], bytes[5]])),
+            terminal_type: TerminalType::from(u16::from_le_bytes([bytes[4], bytes[5]])),
             associated_terminal_id: bytes[6],
             clock_source_id: bytes[7],
             num_channels: bytes[8],
@@ -859,6 +989,22 @@ impl USBDescriptor for InputTerminalDescriptor {
             controls_bitmap: u16::from_le_bytes([bytes[14], bytes[15]]),
             terminal_name: bytes[16],
         })
+    }
+}
+
+impl WritableDescriptor for InputTerminalDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[3] = self.terminal_id;
+        [bytes[4], bytes[5]] = u16::from(self.terminal_type).to_le_bytes();
+        bytes[6] = self.associated_terminal_id;
+        bytes[7] = self.clock_source_id;
+        bytes[8] = self.num_channels;
+        [bytes[9], bytes[10], bytes[11], bytes[12]] = self.channel_config_bitmap.to_le_bytes();
+        bytes[13] = self.channel_names;
+        [bytes[14], bytes[15]] = self.controls_bitmap.to_le_bytes();
+        bytes[16] = self.terminal_name;
+        Ok(bytes[0] as usize)
     }
 }
 
@@ -896,13 +1042,27 @@ impl USBDescriptor for OutputTerminalDescriptor {
         Self::match_bytes(bytes)?;
         Ok(Self {
             terminal_id: bytes[3],
-            terminal_type: terminal_type_from_u16(u16::from_le_bytes([bytes[4], bytes[5]])),
+            terminal_type: TerminalType::from(u16::from_le_bytes([bytes[4], bytes[5]])),
             associated_terminal_id: bytes[6],
             source_id: bytes[7],
             clock_source_id: bytes[8],
             controls_bitmap: u16::from_le_bytes([bytes[9], bytes[10]]),
             terminal_name: bytes[11],
         })
+    }
+}
+
+impl WritableDescriptor for OutputTerminalDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[3] = self.terminal_id;
+        [bytes[4], bytes[5]] = u16::from(self.terminal_type).to_le_bytes();
+        bytes[6] = self.associated_terminal_id;
+        bytes[7] = self.source_id;
+        bytes[8] = self.clock_source_id;
+        [bytes[9], bytes[10]] = self.controls_bitmap.to_le_bytes();
+        bytes[11] = self.terminal_name;
+        Ok(bytes[0] as usize)
     }
 }
 
@@ -1089,6 +1249,17 @@ impl USBDescriptor for AudioEndpointDescriptor {
     }
 }
 
+impl WritableDescriptor for AudioEndpointDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[3] = self.attributes_bitmap;
+        bytes[4] = self.controls_bitmap;
+        bytes[5] = self.lock_delay_units;
+        [bytes[6], bytes[7]] = self.lock_delay.to_le_bytes();
+        Ok(bytes[0] as usize)
+    }
+}
+
 /// Enumeration of format type descriptors for different audio formats.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
@@ -1214,6 +1385,67 @@ impl USBDescriptor for FormatTypeDescriptor {
                 }))
             }
             _ => Err(DescriptorError::BadDescriptorData),
+        }
+    }
+}
+
+impl WritableDescriptor for FormatTypeDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        match self {
+            Self::I(data) => {
+                Self::prepare_bytes(bytes, Self::BUF_SIZE_I as u8)?;
+                bytes[3] = format_type::I;
+                bytes[4] = data.subslot_size;
+                bytes[5] = data.bit_resolution;
+                Ok(bytes[0] as usize)
+            }
+            Self::II(data) => {
+                Self::prepare_bytes(bytes, Self::BUF_SIZE_II as u8)?;
+                bytes[3] = format_type::II;
+                [bytes[4], bytes[5]] = data.max_bit_rate.to_le_bytes();
+                [bytes[6], bytes[7]] = data.slots_per_frame.to_le_bytes();
+                Ok(bytes[0] as usize)
+            }
+            Self::III(data) => {
+                Self::prepare_bytes(bytes, Self::BUF_SIZE_III as u8)?;
+                bytes[3] = format_type::III;
+                bytes[4] = data.subslot_size;
+                bytes[5] = data.bit_resolution;
+                Ok(bytes[0] as usize)
+            }
+            Self::IV => {
+                Self::prepare_bytes(bytes, Self::BUF_SIZE_IV as u8)?;
+                bytes[3] = format_type::IV;
+                Ok(bytes[0] as usize)
+            }
+            Self::ExtendedI(data) => {
+                Self::prepare_bytes(bytes, Self::BUF_SIZE_EXTENDED_I as u8)?;
+                bytes[3] = format_type::EXT_I;
+                bytes[4] = data.subslot_size;
+                bytes[5] = data.bit_resolution;
+                bytes[6] = data.header_length;
+                bytes[7] = data.control_size;
+                bytes[8] = data.sideband_protocol;
+                Ok(bytes[0] as usize)
+            }
+            Self::ExtendedII(data) => {
+                Self::prepare_bytes(bytes, Self::BUF_SIZE_EXTENDED_II as u8)?;
+                bytes[3] = format_type::EXT_II;
+                [bytes[4], bytes[5]] = data.max_bit_rate.to_le_bytes();
+                [bytes[6], bytes[7]] = data.samples_per_frame.to_le_bytes();
+                bytes[8] = data.header_length;
+                bytes[9] = data.sideband_protocol;
+                Ok(bytes[0] as usize)
+            }
+            Self::ExtendedIII(data) => {
+                Self::prepare_bytes(bytes, Self::BUF_SIZE_EXTENDED_III as u8)?;
+                bytes[3] = format_type::EXT_III;
+                bytes[4] = data.subslot_size;
+                bytes[5] = data.bit_resolution;
+                bytes[6] = data.header_length;
+                bytes[7] = data.sideband_protocol;
+                Ok(bytes[0] as usize)
+            }
         }
     }
 }
@@ -1585,5 +1817,333 @@ mod test {
         let audio_interface_collection = AudioInterfaceCollection::try_from_configuration(&descriptor).unwrap();
         // info!("{:#?}", audio_interface_collection);
         assert_eq!(audio_interface_collection, expected);
+    }
+
+    #[test]
+    fn roundtrip_interface_association_descriptor() {
+        let descriptor = InterfaceAssociationDescriptor {
+            first_interface: 0x11,
+            num_interfaces: 0x22,
+            class: 0x33,
+            subclass: 0x44,
+            protocol: 0x55,
+            interface_name: 0x66,
+        };
+        let mut bytes = [0u8; InterfaceAssociationDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(InterfaceAssociationDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(InterfaceAssociationDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_clock_source_descriptor() {
+        let descriptor = ClockSourceDescriptor {
+            clock_id: 0x11,
+            attributes_bitmap: 0x22,
+            controls_bitmap: 0x33,
+            associated_terminal: 0x44,
+            clock_name: 0x55,
+        };
+        let mut bytes = [0u8; ClockSourceDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(ClockSourceDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(ClockSourceDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_clock_selector_descriptor() {
+        for n in 0..ClockSelectorDescriptor::SUPPORTED_SOURCE_IDS {
+            let mut source_ids = Vec::new();
+            for i in 0..n {
+                assert!(source_ids.push(0x22u8 + i).is_ok());
+            }
+            let descriptor = ClockSelectorDescriptor {
+                clock_id: 0x11,
+                source_ids,
+                controls_bitmap: 0x33,
+                clock_name: 0x44,
+            };
+            let mut bytes = [0u8; ClockSelectorDescriptor::BUF_SIZE];
+            assert_eq!(descriptor.write_to_bytes(&mut bytes), Ok(7 + n as usize));
+            assert_eq!(ClockSelectorDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+        }
+    }
+
+    #[test]
+    fn roudtrip_clock_multiplier_descriptor() {
+        let descriptor = ClockMultiplierDescriptor {
+            clock_id: 0x11,
+            source_id: 0x22,
+            controls_bitmap: 0x33,
+            clock_name: 0x44,
+        };
+        let mut bytes = [0u8; ClockMultiplierDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(ClockMultiplierDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(ClockMultiplierDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_clock_descriptor_source() {
+        let descriptor = ClockDescriptor::Source(ClockSourceDescriptor {
+            clock_id: 0x11,
+            attributes_bitmap: 0x22,
+            controls_bitmap: 0x33,
+            associated_terminal: 0x44,
+            clock_name: 0x55,
+        });
+        let mut bytes = [0u8; ClockDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(ClockSourceDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(ClockDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_clock_descriptor_selector() {
+        let descriptor = ClockDescriptor::Selector(ClockSelectorDescriptor {
+            clock_id: 0x11,
+            source_ids: Vec::from_array([0x22]),
+            controls_bitmap: 0x33,
+            clock_name: 0x44,
+        });
+        let mut bytes = [0u8; ClockDescriptor::BUF_SIZE];
+        assert_eq!(descriptor.write_to_bytes(&mut bytes), Ok(7 + 1));
+        assert_eq!(ClockDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_clock_descriptor_multiplier() {
+        let descriptor = ClockDescriptor::Multiplier(ClockMultiplierDescriptor {
+            clock_id: 0x11,
+            source_id: 0x22,
+            controls_bitmap: 0x33,
+            clock_name: 0x44,
+        });
+        let mut bytes = [0u8; ClockDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(ClockMultiplierDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(ClockDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn rountrip_terminal_type() {
+        for value in 0..=u16::MAX {
+            let terminal_type = TerminalType::from(value);
+            assert_eq!(u16::from(terminal_type), value);
+        }
+    }
+
+    #[test]
+    fn roundtrip_input_terminal_descriptor() {
+        let descriptor = InputTerminalDescriptor {
+            terminal_id: 0x11,
+            terminal_type: TerminalType::Microphone,
+            associated_terminal_id: 0x33,
+            clock_source_id: 0x44,
+            num_channels: 0x55,
+            channel_config_bitmap: 0x66778899,
+            channel_names: 0xaa,
+            controls_bitmap: 0xbbcc,
+            terminal_name: 0xdd,
+        };
+        let mut bytes = [0u8; InputTerminalDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(InputTerminalDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(InputTerminalDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roudtrip_output_terminal_descriptor() {
+        let descriptor = OutputTerminalDescriptor {
+            terminal_id: 0x11,
+            terminal_type: TerminalType::Speaker,
+            associated_terminal_id: 0x33,
+            source_id: 0x44,
+            clock_source_id: 0x55,
+            controls_bitmap: 0x6677,
+            terminal_name: 0x88,
+        };
+        let mut bytes = [0u8; OutputTerminalDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(OutputTerminalDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(OutputTerminalDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_terminal_descriptor_input() {
+        let descriptor = TerminalDescriptor::Input(InputTerminalDescriptor {
+            terminal_id: 0x11,
+            terminal_type: TerminalType::Microphone,
+            associated_terminal_id: 0x33,
+            clock_source_id: 0x44,
+            num_channels: 0x55,
+            channel_config_bitmap: 0x66778899,
+            channel_names: 0xaa,
+            controls_bitmap: 0xbbcc,
+            terminal_name: 0xdd,
+        });
+        let mut bytes = [0u8; TerminalDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(InputTerminalDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(TerminalDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+    #[test]
+    fn roundtrip_terminal_descriptor_output() {
+        let descriptor = TerminalDescriptor::Output(OutputTerminalDescriptor {
+            terminal_id: 0x11,
+            terminal_type: TerminalType::Speaker,
+            associated_terminal_id: 0x33,
+            source_id: 0x44,
+            clock_source_id: 0x55,
+            controls_bitmap: 0x6677,
+            terminal_name: 0x88,
+        });
+        let mut bytes = [0u8; TerminalDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(OutputTerminalDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(TerminalDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_audio_endpoint_descriptor() {
+        let descriptor = AudioEndpointDescriptor {
+            attributes_bitmap: 0x11,
+            controls_bitmap: 0x22,
+            lock_delay_units: 0x33,
+            lock_delay: 0x4455,
+        };
+        let mut bytes = [0u8; AudioEndpointDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(AudioEndpointDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(AudioEndpointDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_format_type_descriptor_i() {
+        let descriptor = FormatTypeDescriptor::I(FormatTypeI {
+            subslot_size: 0x11,
+            bit_resolution: 0x22,
+        });
+        let mut bytes = [0u8; FormatTypeDescriptor::BUF_SIZE_I];
+        assert!(FormatTypeDescriptor::BUF_SIZE_I <= FormatTypeDescriptor::BUF_SIZE);
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(FormatTypeDescriptor::BUF_SIZE_I)
+        );
+        assert_eq!(FormatTypeDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_format_type_descriptor_ii() {
+        let descriptor = FormatTypeDescriptor::II(FormatTypeII {
+            max_bit_rate: 0x1122,
+            slots_per_frame: 0x3344,
+        });
+        let mut bytes = [0u8; FormatTypeDescriptor::BUF_SIZE_II];
+        assert!(FormatTypeDescriptor::BUF_SIZE_II <= FormatTypeDescriptor::BUF_SIZE);
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(FormatTypeDescriptor::BUF_SIZE_II)
+        );
+        assert_eq!(FormatTypeDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_format_type_descriptor_iii() {
+        let descriptor = FormatTypeDescriptor::III(FormatTypeIII {
+            subslot_size: 0x11,
+            bit_resolution: 0x22,
+        });
+        let mut bytes = [0u8; FormatTypeDescriptor::BUF_SIZE_III];
+        assert!(FormatTypeDescriptor::BUF_SIZE_III <= FormatTypeDescriptor::BUF_SIZE);
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(FormatTypeDescriptor::BUF_SIZE_III)
+        );
+        assert_eq!(FormatTypeDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_format_type_descriptor_iv() {
+        let descriptor = FormatTypeDescriptor::IV;
+        let mut bytes = [0u8; FormatTypeDescriptor::BUF_SIZE_IV];
+        assert!(FormatTypeDescriptor::BUF_SIZE_IV <= FormatTypeDescriptor::BUF_SIZE);
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(FormatTypeDescriptor::BUF_SIZE_IV)
+        );
+        assert_eq!(FormatTypeDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_format_type_descriptor_extended_i() {
+        let descriptor = FormatTypeDescriptor::ExtendedI(FormatTypeExtendedI {
+            subslot_size: 0x11,
+            bit_resolution: 0x22,
+            header_length: 0x33,
+            control_size: 0x44,
+            sideband_protocol: 0x55,
+        });
+        let mut bytes = [0u8; FormatTypeDescriptor::BUF_SIZE_EXTENDED_I];
+        assert!(FormatTypeDescriptor::BUF_SIZE_EXTENDED_I <= FormatTypeDescriptor::BUF_SIZE);
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(FormatTypeDescriptor::BUF_SIZE_EXTENDED_I)
+        );
+        assert_eq!(FormatTypeDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_format_type_descriptor_extended_ii() {
+        let descriptor = FormatTypeDescriptor::ExtendedII(FormatTypeExtendedII {
+            max_bit_rate: 0x1122,
+            samples_per_frame: 0x3344,
+            header_length: 0x55,
+            sideband_protocol: 0x66,
+        });
+        let mut bytes = [0u8; FormatTypeDescriptor::BUF_SIZE_EXTENDED_II];
+        assert!(FormatTypeDescriptor::BUF_SIZE_EXTENDED_II <= FormatTypeDescriptor::BUF_SIZE);
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(FormatTypeDescriptor::BUF_SIZE_EXTENDED_II)
+        );
+        assert_eq!(FormatTypeDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_format_type_descriptor_extended_iii() {
+        let descriptor = FormatTypeDescriptor::ExtendedIII(FormatTypeExtendedIII {
+            subslot_size: 0x11,
+            bit_resolution: 0x22,
+            header_length: 0x33,
+            sideband_protocol: 0x44,
+        });
+        let mut bytes = [0u8; FormatTypeDescriptor::BUF_SIZE_EXTENDED_III];
+        assert!(FormatTypeDescriptor::BUF_SIZE_EXTENDED_III <= FormatTypeDescriptor::BUF_SIZE);
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(FormatTypeDescriptor::BUF_SIZE_EXTENDED_III)
+        );
+        assert_eq!(FormatTypeDescriptor::try_from_bytes(&bytes), Ok(descriptor));
     }
 }

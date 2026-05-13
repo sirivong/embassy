@@ -24,7 +24,7 @@ pub type StringIndex = u8;
 /// Maximum descriptor buffer size used during enumeration.
 pub(crate) const DEFAULT_MAX_DESCRIPTOR_SIZE: usize = 512;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum DescriptorError {
     BadDescriptorData,
@@ -71,6 +71,17 @@ pub trait USBDescriptor {
         Self: Sized;
 }
 
+/// Writable descriptor.
+///
+/// Implementors of this trait can be written to a byte slice.
+pub trait WritableDescriptor: USBDescriptor {
+    /// Writes this descriptor to the start of the byte buffer `bytes`.
+    ///
+    /// On success, it returns the number of bytes written.
+    /// On failure, it returns a [Self::Error].
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error>;
+}
+
 /// Fixed size descriptor.
 ///
 /// Implementors of this trait only allow the correct size while reading or writing.
@@ -99,6 +110,34 @@ pub trait FixedSizeDescriptor: USBDescriptor {
         {
             Err(DescriptorError::BadDescriptorType)
         } else {
+            Ok(())
+        }
+    }
+
+    /// Prepares `bytes` to receive descriptor data.
+    ///
+    /// Fills in the descriptor length and type, and zeroes the rest.
+    ///
+    /// On success, it returns `Ok(())`.
+    /// On error, it returns a [DescriptorError].
+    #[inline(always)]
+    fn prepare_bytes(bytes: &mut [u8], len: u8) -> Result<(), DescriptorError>
+    where
+        Self: WritableDescriptor,
+    {
+        if len != Self::LEN {
+            Err(DescriptorError::BadDescriptorSize)
+        } else if bytes.len() < Self::LEN as usize {
+            Err(DescriptorError::UnexpectedEndOfBuffer)
+        } else {
+            bytes[0] = len;
+            bytes[1] = Self::DESC_TYPE;
+            if let Some(subtype) = Self::DESC_SUBTYPE {
+                bytes[2] = subtype;
+                bytes[3..len as usize].fill(0);
+            } else {
+                bytes[2..len as usize].fill(0);
+            }
             Ok(())
         }
     }
@@ -133,6 +172,34 @@ pub trait ExtendableDescriptor: USBDescriptor {
         {
             Err(DescriptorError::BadDescriptorType)
         } else {
+            Ok(())
+        }
+    }
+
+    /// Prepares `bytes` to receive descriptor data.
+    ///
+    /// Fills in the descriptor length and type, and zeroes the rest.
+    ///
+    /// On success, it returns `Ok(())`.
+    /// On error, it returns a [DescriptorError].
+    #[inline(always)]
+    fn prepare_bytes(bytes: &mut [u8], len: u8) -> Result<(), DescriptorError>
+    where
+        Self: WritableDescriptor,
+    {
+        if len < Self::MIN_LEN {
+            Err(DescriptorError::BadDescriptorSize)
+        } else if bytes.len() < len as usize {
+            Err(DescriptorError::UnexpectedEndOfBuffer)
+        } else {
+            bytes[0] = len;
+            bytes[1] = Self::DESC_TYPE;
+            if let Some(subtype) = Self::DESC_SUBTYPE {
+                bytes[2] = subtype;
+                bytes[3..len as usize].fill(0);
+            } else {
+                bytes[2..len as usize].fill(0);
+            }
             Ok(())
         }
     }
@@ -183,6 +250,36 @@ pub trait VariableSizeDescriptor: USBDescriptor {
     fn match_bytes_len(_bytes: &[u8]) -> bool {
         true
     }
+
+    /// Prepares `bytes` to receive descriptor data.
+    ///
+    /// Fills in the descriptor length and type, and zeroes the rest.
+    ///
+    /// It assumes that `len` matches the additional restrictions of the length.
+    ///
+    /// On success, it returns `Ok(())`.
+    /// On error, it returns a [DescriptorError].
+    #[inline(always)]
+    fn prepare_bytes(bytes: &mut [u8], len: u8) -> Result<(), DescriptorError>
+    where
+        Self: WritableDescriptor,
+    {
+        if !(Self::MIN_LEN..=Self::MAX_LEN).contains(&len) {
+            Err(DescriptorError::BadDescriptorSize)
+        } else if bytes.len() < len as usize {
+            Err(DescriptorError::UnexpectedEndOfBuffer)
+        } else {
+            bytes[0] = len;
+            bytes[1] = Self::DESC_TYPE;
+            if let Some(subtype) = Self::DESC_SUBTYPE {
+                bytes[2] = subtype;
+                bytes[3..len as usize].fill(0);
+            } else {
+                bytes[2..len as usize].fill(0);
+            }
+            Ok(())
+        }
+    }
 }
 
 /// Partial version of [DeviceDescriptor].
@@ -194,12 +291,12 @@ pub struct DeviceDescriptorPartial {
 }
 
 impl ExtendableDescriptor for DeviceDescriptorPartial {
-    const MIN_LEN: u8 = DeviceDescriptor::MIN_LEN;
+    // `max_packet_size0` is at byte 7.
+    const MIN_LEN: u8 = 8;
 }
 
 impl USBDescriptor for DeviceDescriptorPartial {
-    // `max_packet_size0` is at byte 7.
-    const BUF_SIZE: usize = 8;
+    const BUF_SIZE: usize = Self::MIN_LEN as usize;
     const DESC_TYPE: u8 = DeviceDescriptor::DESC_TYPE;
     type Error = DescriptorError;
 
@@ -288,6 +385,25 @@ impl USBDescriptor for DeviceDescriptor {
     }
 }
 
+impl WritableDescriptor for DeviceDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        [bytes[2], bytes[3]] = self.bcd_usb.to_le_bytes();
+        bytes[4] = self.device_class;
+        bytes[5] = self.device_subclass;
+        bytes[6] = self.device_protocol;
+        bytes[7] = self.max_packet_size0;
+        [bytes[8], bytes[9]] = self.vendor_id.to_le_bytes();
+        [bytes[10], bytes[11]] = self.product_id.to_le_bytes();
+        [bytes[12], bytes[13]] = self.bcd_device.to_le_bytes();
+        bytes[14] = self.manufacturer;
+        bytes[15] = self.product;
+        bytes[16] = self.serial_number;
+        bytes[17] = self.num_configurations;
+        Ok(bytes[0] as usize)
+    }
+}
+
 /// Standard USB Configuration Descriptor.
 ///
 /// When a configuration descriptor is requested, all related descriptors are returned. (USB 2.0 §9.6.3)
@@ -330,6 +446,19 @@ impl USBDescriptor for ConfigurationDescriptor {
             attributes: bytes[7],
             max_power: bytes[8],
         })
+    }
+}
+
+impl WritableDescriptor for ConfigurationDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        [bytes[2], bytes[3]] = self.total_len.to_le_bytes();
+        bytes[4] = self.num_interfaces;
+        bytes[5] = self.configuration_value;
+        bytes[6] = self.configuration_name;
+        bytes[7] = self.attributes;
+        bytes[8] = self.max_power;
+        Ok(bytes[0] as usize)
     }
 }
 
@@ -577,6 +706,20 @@ impl USBDescriptor for InterfaceDescriptor {
     }
 }
 
+impl WritableDescriptor for InterfaceDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[2] = self.interface_number;
+        bytes[3] = self.alternate_setting;
+        bytes[4] = self.num_endpoints;
+        bytes[5] = self.interface_class;
+        bytes[6] = self.interface_subclass;
+        bytes[7] = self.interface_protocol;
+        bytes[8] = self.interface_name;
+        Ok(bytes[0] as usize)
+    }
+}
+
 /// The chain of descriptors of a [InterfaceDescriptor].
 ///
 /// A [ConfigurationDescriptorChain] provides one or more interface descriptors (USB 2.0 §9.6.5).
@@ -778,6 +921,17 @@ impl USBDescriptor for EndpointDescriptor {
     }
 }
 
+impl WritableDescriptor for EndpointDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        Self::prepare_bytes(bytes, Self::MIN_LEN)?;
+        bytes[2] = self.endpoint_address;
+        bytes[3] = self.attributes;
+        [bytes[4], bytes[5]] = self.max_packet_size.to_le_bytes();
+        bytes[6] = self.interval;
+        Ok(bytes[0] as usize)
+    }
+}
+
 impl From<EndpointDescriptor> for EndpointInfo {
     fn from(value: EndpointDescriptor) -> Self {
         EndpointInfo {
@@ -934,5 +1088,109 @@ mod test {
 
         let mut sv = ShowDescriptors {};
         cfg.visit_descriptors(&mut sv).unwrap();
+    }
+
+    #[test]
+    fn read_device_descriptor_partial() {
+        let descriptor = DeviceDescriptor {
+            bcd_usb: 0x1122,
+            device_class: 0x33,
+            device_subclass: 0x44,
+            device_protocol: 0x55,
+            max_packet_size0: 0x66,
+            vendor_id: 0x7788,
+            product_id: 0x99aa,
+            bcd_device: 0xbbcc,
+            manufacturer: 0xdd,
+            product: 0xee,
+            serial_number: 0xff,
+            num_configurations: 0x00,
+        };
+        let mut bytes = [0u8; DeviceDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(DeviceDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(
+            DeviceDescriptorPartial::try_from_bytes(&bytes[..DeviceDescriptorPartial::BUF_SIZE]),
+            Ok(DeviceDescriptorPartial { max_packet_size0: 0x66 })
+        );
+    }
+
+    #[test]
+    fn roundtrip_device_descriptor() {
+        let descriptor = DeviceDescriptor {
+            bcd_usb: 0x1122,
+            device_class: 0x33,
+            device_subclass: 0x44,
+            device_protocol: 0x55,
+            max_packet_size0: 0x66,
+            vendor_id: 0x7788,
+            product_id: 0x99aa,
+            bcd_device: 0xbbcc,
+            manufacturer: 0xdd,
+            product: 0xee,
+            serial_number: 0xff,
+            num_configurations: 0x00,
+        };
+        let mut bytes = [0u8; DeviceDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(DeviceDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(DeviceDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_configuration_descriptor() {
+        let descriptor = ConfigurationDescriptor {
+            total_len: 0x1122,
+            num_interfaces: 0x33,
+            configuration_value: 0x44,
+            configuration_name: 0x55,
+            attributes: 0x66,
+            max_power: 0x77,
+        };
+        let mut bytes = [0u8; ConfigurationDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(ConfigurationDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(ConfigurationDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_interface_descriptor() {
+        let descriptor = InterfaceDescriptor {
+            interface_number: 0x11,
+            alternate_setting: 0x22,
+            num_endpoints: 0x33,
+            interface_class: 0x44,
+            interface_subclass: 0x55,
+            interface_protocol: 0x66,
+            interface_name: 0x77,
+        };
+        let mut bytes = [0u8; InterfaceDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(InterfaceDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(InterfaceDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_endpoint_descriptor() {
+        let descriptor = EndpointDescriptor {
+            endpoint_address: 0x11,
+            attributes: 0x22,
+            max_packet_size: 0x3344,
+            interval: 0x55,
+        };
+        let mut bytes = [0u8; EndpointDescriptor::BUF_SIZE];
+        assert_eq!(
+            descriptor.write_to_bytes(&mut bytes),
+            Ok(EndpointDescriptor::MIN_LEN as usize)
+        );
+        assert_eq!(EndpointDescriptor::try_from_bytes(&bytes), Ok(descriptor));
     }
 }
