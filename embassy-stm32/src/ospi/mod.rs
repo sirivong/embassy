@@ -50,17 +50,23 @@ use crate::{Peri, peripherals};
 // bit 1 high = port 2, bit 1 low = port 1
 //
 
+#[allow(unused)]
 #[cfg(octospim_v1)]
 pub(crate) const OCTOSPIM_P1_LOW: u8 = 0b00;
+#[allow(unused)]
 #[cfg(octospim_v1)]
 pub(crate) const OCTOSPIM_P1_HIGH: u8 = 0b01;
+#[allow(unused)]
 #[cfg(octospim_v1)]
 pub(crate) const OCTOSPIM_P2_LOW: u8 = 0b10;
+#[allow(unused)]
 #[cfg(octospim_v1)]
 pub(crate) const OCTOSPIM_P2_HIGH: u8 = 0b11;
 
+#[allow(unused)]
 #[cfg(octospim_v1)]
 pub(crate) const OCTOSPIM_P1_CTRL: u8 = 0b00;
+#[allow(unused)]
 #[cfg(octospim_v1)]
 pub(crate) const OCTOSPIM_P2_CTRL: u8 = 0b10;
 
