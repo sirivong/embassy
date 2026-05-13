@@ -578,7 +578,7 @@ impl<'d, T: Instance<Regs: InjectedAdcRegs>> Adc<'d, T> {
         injected_trigger: InjectedAdcTrigger<T>,
         injected_interrupt: bool,
     ) -> (RingBufferedAdc<'a, T::Regs>, InjectedAdc<'b, T::Regs>) {
-        unsafe {
+        let ret = unsafe {
             (
                 Self {
                     adc: self.adc.clone_unchecked(),
@@ -589,7 +589,11 @@ impl<'d, T: Instance<Regs: InjectedAdcRegs>> Adc<'d, T> {
                 }
                 .setup_injected_conversions(injected_sequence, injected_trigger, injected_interrupt),
             )
-        }
+        };
+
+        core::mem::forget(self);
+
+        ret
     }
 }
 
