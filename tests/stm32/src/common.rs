@@ -492,7 +492,7 @@ pub fn config() -> Config {
     }
     #[cfg(feature = "stm32wb55rg")]
     {
-        config.rcc = embassy_stm32::rcc::WPAN_DEFAULT;
+        config.rcc = embassy_stm32::rcc::Config::new_wpan();
     }
 
     #[cfg(feature = "stm32f091rc")]
