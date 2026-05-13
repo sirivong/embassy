@@ -8,10 +8,10 @@ pub use pac::adc::vals::{Adcaldif, Adstp, Difsel, Dmacfg, Dmaen, Exten, Rovsm, T
 use pac::adc::vals::{Adcaldif, Difsel, Exten};
 pub use pac::adccommon::vals::{Dual, Presc};
 
-use super::{Adc, AnyAdcChannel, ConversionMode, Resolution, SampleTime, blocking_delay_us};
-use crate::adc::{AdcRegs, DefaultInstance, InjectedRegs};
+use crate::adc::{Adc, AdcRegs, AnyAdcChannel, ConversionMode, DefaultInstance, InjectedRegs, Resolution, SampleTime};
 use crate::pac::adc::regs::{Jsqr, Smpr, Smpr2, Sqr1, Sqr2, Sqr3, Sqr4};
 use crate::time::Hertz;
+use crate::wait::block_for_us;
 use crate::{Peri, pac, rcc};
 
 mod injected;
@@ -297,7 +297,7 @@ impl<'d, T: DefaultInstance> Adc<'d, T> {
             reg.set_advregen(true);
         });
 
-        blocking_delay_us(20);
+        block_for_us(20);
 
         T::regs().difsel().modify(|w| {
             for n in 0..18 {
@@ -313,7 +313,7 @@ impl<'d, T: DefaultInstance> Adc<'d, T> {
 
         while T::regs().cr().read().adcal() {}
 
-        blocking_delay_us(20);
+        block_for_us(20);
 
         T::regs().cr().modify(|w| {
             w.set_adcaldif(Adcaldif::Differential);
@@ -323,7 +323,7 @@ impl<'d, T: DefaultInstance> Adc<'d, T> {
 
         while T::regs().cr().read().adcal() {}
 
-        blocking_delay_us(20);
+        block_for_us(20);
 
         T::regs().enable();
 

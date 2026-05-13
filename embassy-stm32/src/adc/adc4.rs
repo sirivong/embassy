@@ -5,7 +5,6 @@ use pac::adc::vals::{Adc4Dmacfg as Dmacfg, Adc4Exten as Exten, Adc4OversamplingR
 #[cfg(stm32wba)]
 use pac::adc::vals::{Dmacfg, Exten, OversamplingRatio, Ovss, Smpsel};
 
-use super::blocking_delay_us;
 use crate::adc::{AdcRegs, ConversionMode, Instance};
 #[cfg(stm32u5)]
 pub use crate::pac::adc::regs::Adc4Chselrmod0 as Chselr;
@@ -16,6 +15,7 @@ pub use crate::pac::adc::vals::{Adc4Presc as Presc, Adc4Res as Resolution, Adc4S
 #[cfg(stm32wba)]
 pub use crate::pac::adc::vals::{Extsel, Presc, Res as Resolution, SampleTime};
 use crate::time::Hertz;
+use crate::wait::block_for_us;
 use crate::{Peri, interrupt, pac, rcc};
 
 mod watchdog_adc4;
@@ -387,7 +387,7 @@ impl<'d, T: Instance<Regs = crate::pac::adc::Adc4>> super::Adc<'d, T> {
         while T::regs().cr().read().adcal() {}
         T::regs().isr().modify(|w| w.set_eocal(true));
 
-        blocking_delay_us(1);
+        block_for_us(1);
 
         T::regs().enable();
 

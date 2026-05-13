@@ -12,7 +12,7 @@ use crate::sdmmc::{
     block_size, bus_width_vals, slice8_mut, slice8_ref,
 };
 use crate::time::{Hertz, mhz};
-use crate::try_until::try_until;
+use crate::wait::try_until;
 
 impl TypedResp for R3 {
     type Word = u32;

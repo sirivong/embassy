@@ -41,8 +41,6 @@ pub mod adc4;
 
 use embassy_hal_internal::drop::OnDrop;
 
-#[allow(unused)]
-pub(self) use crate::block_for_us as blocking_delay_us;
 pub use crate::pac::adc::vals;
 #[cfg(any(adc_v2, adc_g4, adc_g0, adc_c0, adc_f3v1))]
 pub use crate::pac::adc::vals::Exten;

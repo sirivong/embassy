@@ -28,9 +28,10 @@ use crate::interrupt::typelevel::Interrupt;
 use crate::pac::sdmmc::Sdmmc as RegBlock;
 use crate::rcc::{self, RccInfo, RccPeripheral, SealedRccPeripheral};
 use crate::time::Hertz;
+use crate::wait::block_for_us;
 #[cfg(sdmmc_uhs)]
-use crate::try_until::try_until;
-use crate::{block_for_us, interrupt, peripherals};
+use crate::wait::{try_until, wait_for_us};
+use crate::{interrupt, peripherals};
 
 /// Module for SD and EMMC cards
 pub mod sd;
@@ -1474,8 +1475,6 @@ impl<'d> Sdmmc<'d> {
     /// shifter restored to 3.3V so the caller can retry without UHS.
     #[cfg(sdmmc_uhs)]
     async fn voltage_switch(&mut self) -> Result<(), Error> {
-        use crate::wait_for_us;
-
         // CKSTOP fires within microseconds of the CMD11 R1 ack at
         // 400 kHz; a 50 ms ceiling is generous.
         const CKSTOP_TIMEOUT: u64 = 50_000;
