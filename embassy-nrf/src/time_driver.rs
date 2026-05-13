@@ -246,14 +246,7 @@ impl RtcDriver {
             });
 
             // 5. Wait for SYSCOUNTER readiness
-            r.syscounter(DOMAIN_IDX).active().write(|w| w.set_active(true));
-            loop {
-                let _ = r.syscounter(DOMAIN_IDX).syscounterl().read();
-                if r.syscounter(DOMAIN_IDX).syscounterh().read().busy() == Busy::Ready {
-                    break;
-                }
-            }
-            r.syscounter(DOMAIN_IDX).active().write(|w| w.set_active(false));
+            let _ = syscounter();
 
             // 6. Enable the domain IRQ.
             #[cfg(feature = "_ns")]
@@ -337,15 +330,6 @@ impl RtcDriver {
 
         let r = rtc();
 
-        // GRTC: SYSCOUNTER[n].ACTIVE is used to keep the SYSCOUNTER running
-        // while an alarm is armed.  When no alarm is pending (u64::MAX),
-        // clear ACTIVE so the SYSCOUNTER can sleep to save power.
-        #[cfg(feature = "_grtc")]
-        if timestamp == u64::MAX {
-            r.syscounter(DOMAIN_IDX).active().write(|w| w.set_active(false));
-            return true;
-        }
-
         loop {
             let t = self.now();
             if timestamp <= t {
@@ -354,10 +338,7 @@ impl RtcDriver {
                 #[cfg(not(feature = "_grtc"))]
                 r.intenclr().write(|w| w.0 = compare_n(n));
                 #[cfg(feature = "_grtc")]
-                {
-                    r.intenclr(DOMAIN_IDX).write(|w| w.0 = compare_n(n));
-                    r.syscounter(DOMAIN_IDX).active().write(|w| w.set_active(false));
-                }
+                r.intenclr(DOMAIN_IDX).write(|w| w.0 = compare_n(n));
 
                 alarm.timestamp.set(u64::MAX);
 
@@ -407,9 +388,6 @@ impl RtcDriver {
             // can write the expected timestamp and be sure the alarm is triggered.
             #[cfg(feature = "_grtc")]
             {
-                // Set ACTIVE to keep SYSCOUNTER running during WFE/WFI so the CC compare can fire and wake the CPU.
-                // ACTIVE is cleared when no alarm is pending (u64::MAX) or expired.
-                r.syscounter(DOMAIN_IDX).active().write(|w| w.set_active(true));
                 r.events_compare(n).write_value(0);
                 // Writes to CC[n].CCL disable the corresponding compare channel and writes to CC[n].CCH enable it.
                 // So CC[n].CCL must be written first.
