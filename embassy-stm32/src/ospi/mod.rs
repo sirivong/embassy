@@ -456,6 +456,7 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
         #[cfg(octospim_v1)] ioh_pgroup: Option<u8>,
         #[cfg(octospim_v1)] ctrl_pgroup: u8,
     ) -> Self {
+        #[cfg(octospim_v1)]
         info!("OCTOSPI_IDX: {:?}", T::OCTOSPI_IDX);
 
         #[cfg(octospim_v1)]
@@ -903,6 +904,7 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -940,6 +942,7 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -979,6 +982,7 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1022,6 +1026,7 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             IOLSRC1,
             #[cfg(octospim_v1)]
             Some(IOLSRC2),
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1065,6 +1070,7 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             IOL_PGROUP,
             #[cfg(octospim_v1)]
             Some(IOH_PGROUP),
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1109,6 +1115,7 @@ impl<'d, T: Instance> Ospi<'d, T, Blocking> {
             IOL_PGROUP,
             #[cfg(octospim_v1)]
             Some(IOH_PGROUP),
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1150,6 +1157,7 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1189,6 +1197,7 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1230,6 +1239,7 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             IOL_PGROUP,
             #[cfg(octospim_v1)]
             None,
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1275,6 +1285,7 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             IOLSRC1,
             #[cfg(octospim_v1)]
             Some(IOLSRC2),
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1320,6 +1331,7 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             IOL_PGROUP,
             #[cfg(octospim_v1)]
             Some(IOH_PGROUP),
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1366,6 +1378,7 @@ impl<'d, T: Instance> Ospi<'d, T, Async> {
             IOL_PGROUP,
             #[cfg(octospim_v1)]
             Some(IOH_PGROUP),
+            #[cfg(octospim_v1)]
             CTRL_PGROUP,
         )
     }
@@ -1591,12 +1604,23 @@ macro_rules! ospi_signal_src_trait_impl {
     };
 }
 
-// pin_trait!(SckPin, Instance);
-// pin_trait!(NckPin, Instance);
-// pin_trait!(DQSPin, Instance);
-// pin_trait!(NSSPin, Instance);
 dma_trait!(OctoDma, Instance);
 
+// pins when NOT using OCTOSPIM
+pin_trait!(SckPin, Instance);
+pin_trait!(NckPin, Instance);
+pin_trait!(DQSPin, Instance);
+pin_trait!(NSSPin, Instance);
+pin_trait!(D0Pin, Instance);
+pin_trait!(D1Pin, Instance);
+pin_trait!(D2Pin, Instance);
+pin_trait!(D3Pin, Instance);
+pin_trait!(D4Pin, Instance);
+pin_trait!(D5Pin, Instance);
+pin_trait!(D6Pin, Instance);
+pin_trait!(D7Pin, Instance);
+
+// signal sources when using OCTOSPIM
 ospi_signal_src_trait!(SckSrc);
 ospi_signal_src_trait!(NckSrc);
 ospi_signal_src_trait!(DQSSrc);
