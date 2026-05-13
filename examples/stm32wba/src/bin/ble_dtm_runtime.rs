@@ -15,15 +15,12 @@
 #![no_std]
 #![no_main]
 
-use core::cell::RefCell;
-
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_futures::select::{Either, select};
 use embassy_stm32::aes::{self, Aes};
 use embassy_stm32::exti::ExtiInput;
 use embassy_stm32::gpio::Pull;
-use embassy_stm32::mode::Blocking;
 use embassy_stm32::peripherals::{AES as AesPeriph, PKA as PkaPeriph, RNG};
 use embassy_stm32::pka::{self, Pka};
 use embassy_stm32::rng::{self, Rng};
@@ -33,13 +30,8 @@ use embassy_stm32_wpan::bluetooth::gap::{AdvData, AdvParams, AdvType, GapEvent};
 use embassy_stm32_wpan::bluetooth::gatt::{CharProperties, GattEventMask, SecurityPermissions, ServiceType, Uuid};
 use embassy_stm32_wpan::bluetooth::hci::types::DtmPacketPayload;
 use embassy_stm32_wpan::bluetooth::{HCI, Normal, Test};
-use embassy_stm32_wpan::{
-    ControllerState, HighInterruptHandler, LowInterruptHandler, ble_runner, new_controller_state,
-};
-use embassy_sync::blocking_mutex::Mutex;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_stm32_wpan::{HighInterruptHandler, LowInterruptHandler, Platform, new_platform};
 use embassy_time::Timer;
-use static_cell::StaticCell;
 use stm32wb_hci::Event;
 use stm32wb_hci::event::ConnectionRole;
 use {defmt_rtt as _, panic_probe as _};
@@ -65,9 +57,16 @@ bind_interrupts!(struct Irqs {
     HASH   => LowInterruptHandler;
 });
 
+/// RNG runner task
 #[embassy_executor::task]
-async fn ble_runner_task() {
-    ble_runner().await
+async fn rng_runner_task(platform: &'static Platform) {
+    platform.run_rng().await
+}
+
+/// BLE runner task - drives the BLE stack sequencer
+#[embassy_executor::task]
+async fn ble_runner_task(platform: &'static Platform) {
+    platform.run_ble().await
 }
 
 #[embassy_executor::main]
@@ -118,26 +117,26 @@ async fn main(spawner: Spawner) {
 
     let mut button = ExtiInput::new(p.PC13, p.EXTI13, Pull::Up, Irqs);
 
-    static RNG_INST: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<Rng<'static, RNG>>>> = StaticCell::new();
-    let rng = RNG_INST.init(Mutex::new(RefCell::new(Rng::new(p.RNG, Irqs))));
+    // Initialize hardware peripherals required by BLE stack
+    let (platform, runtime) = new_platform!(
+        Rng::new(p.RNG, Irqs),
+        Aes::new_blocking(p.AES, Irqs),
+        Pka::new_blocking(p.PKA, Irqs),
+        8
+    );
 
-    static AES_INST: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<Aes<'static, AesPeriph, Blocking>>>> =
-        StaticCell::new();
-    let aes = AES_INST.init(Mutex::new(RefCell::new(Aes::new_blocking(p.AES, Irqs))));
+    info!("Hardware peripherals initialized (RNG, AES, PKA)");
 
-    static PKA_INST: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<Pka<'static, PkaPeriph>>>> = StaticCell::new();
-    let pka = PKA_INST.init(Mutex::new(RefCell::new(Pka::new_blocking(p.PKA, Irqs))));
+    // Spawn the RNG runner task
+    spawner.spawn(rng_runner_task(platform).expect("Failed to spawn rng runner"));
 
     // Spawn the BLE runner task (required for proper BLE operation)
-    spawner.spawn(ble_runner_task().expect("Failed to spawn BLE runner"));
+    spawner.spawn(ble_runner_task(platform).expect("Failed to spawn BLE runner"));
 
-    // Initialize BLE stack — state is stored and passed through each reinit
-    let mut state: &'static mut ControllerState = new_controller_state!(8);
-    let mut ble = HCI::new(state, rng, aes, pka, Irqs)
+    // Initialize BLE stack
+    let mut ble = HCI::new(platform, runtime, Irqs)
         .await
         .expect("BLE initialization failed");
-
-    info!("BLE stack initialized");
 
     let mut gatt = ble.gatt_server();
 
@@ -194,20 +193,22 @@ async fn main(spawner: Spawner) {
                 // deinit terminates connections and advertising via hci_reset(),
                 // leaving the LL in a clean idle state. State is returned so it
                 // can be passed directly to the next HCI instance.
-                state = ble.deinit().expect("deinit failed");
+                ble.deinit().expect("deinit failed");
 
                 // Initialize a minimal DTM-only instance (no GAP/GATT needed for DTM)
-                let mut dtm_ble = HCI::new_dtm(state, rng, Irqs).await.expect("DTM initialization failed");
+                let mut dtm_ble = HCI::new_dtm(platform, runtime, Irqs)
+                    .await
+                    .expect("DTM initialization failed");
 
                 run_dtm_test(&mut dtm_ble, expected).await;
 
                 // Deinit the DTM instance — resets radio hardware so PhyStartClbr
                 // succeeds when advertising is configured after full BLE reinit.
                 info!("DTM done — reinitializing BLE stack");
-                state = dtm_ble.deinit().expect("deinit after DTM failed");
+                dtm_ble.deinit().expect("deinit after DTM failed");
 
                 // Reinitialize full BLE stack with the same state
-                ble = HCI::new(state, rng, aes, pka, Irqs).await.expect("BLE reinit failed");
+                ble = HCI::new(platform, runtime, Irqs).await.expect("BLE reinit failed");
 
                 // Rebuild GATT services (cleared by hci_reset inside deinit)
                 let mut gatt = ble.gatt_server();
@@ -236,7 +237,7 @@ async fn main(spawner: Spawner) {
     }
 }
 
-async fn handle_ble_event(ble: &mut HCI<Normal>, event: &Event, adv_params: &AdvParams, adv_data: &AdvData) {
+async fn handle_ble_event(ble: &mut HCI<'_, Normal>, event: &Event, adv_params: &AdvParams, adv_data: &AdvData) {
     if let Some(gap_event) = ble.process_event(event) {
         match gap_event {
             GapEvent::Connected(conn) => {
@@ -299,13 +300,13 @@ async fn handle_ble_event(ble: &mut HCI<Normal>, event: &Event, adv_params: &Adv
     }
 }
 
-async fn start_advertising(ble: &mut HCI<Normal>, params: &AdvParams, data: &AdvData) {
+async fn start_advertising(ble: &mut HCI<'_, Normal>, params: &AdvParams, data: &AdvData) {
     ble.start_advertising(params.clone(), data.clone(), None)
         .await
         .expect("start advertising failed");
 }
 
-async fn run_dtm_test(ble: &mut HCI<Test>, expected: u32) {
+async fn run_dtm_test(ble: &mut HCI<'_, Test>, expected: u32) {
     let freq_mhz = 2402 + 2 * DTM_CHANNEL as u32;
 
     match DTM_MODE {

@@ -2,7 +2,7 @@
 
 use core::cell::{RefCell, UnsafeCell};
 use core::convert::Infallible;
-use core::future::Future;
+use core::future::{Future, poll_fn};
 use core::ops::Range;
 use core::pin::Pin;
 use core::task::{Context, Poll};
@@ -347,6 +347,11 @@ where
             let n = available.len().min(buf.len());
             available[..n].copy_from_slice(&buf[..n]);
             s.buffer.push(n);
+
+            if s.buffer.is_full() {
+                s.read_waker.wake();
+            }
+
             Ok(n)
         })
     }
@@ -449,6 +454,20 @@ where
             s.buffer.clear();
             s.write_waker.wake();
         })
+    }
+
+    /// Wait until the pipe is full (no free space in the buffer)
+    pub async fn wait_full(&self) {
+        poll_fn(|cx| {
+            self.inner.lock(|rc: &RefCell<PipeState<N>>| {
+                let s = &mut *rc.borrow_mut();
+
+                s.read_waker.register(cx.waker());
+            });
+
+            if self.is_full() { Poll::Ready(()) } else { Poll::Pending }
+        })
+        .await;
     }
 
     /// Return whether the pipe is full (no free space in the buffer)

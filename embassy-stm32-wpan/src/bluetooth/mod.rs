@@ -7,17 +7,8 @@ pub mod gatt;
 pub mod hci;
 pub mod security;
 
-use core::cell::RefCell;
-
 use embassy_futures::yield_now;
-use embassy_stm32::aes::Aes;
 use embassy_stm32::interrupt;
-use embassy_stm32::mode::Blocking;
-use embassy_stm32::peripherals::{AES as AesPeriph, PKA as PkaPeriph, RNG};
-use embassy_stm32::pka::Pka;
-use embassy_stm32::rng::Rng;
-use embassy_sync::blocking_mutex::Mutex;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use stm32wb_hci::event::{
     DisconnectionComplete, LeConnectionComplete, LeConnectionUpdateComplete, LeDataLengthChangeEvent,
     LeEnhancedConnectionComplete, LePhyUpdateComplete,
@@ -38,19 +29,26 @@ use crate::bluetooth::hci::types::DtmPacketPayload;
 use crate::bluetooth::hci::{DtmRxPhy, DtmTxPhy};
 use crate::bluetooth::security::SecurityManager;
 use crate::controller::Controller;
-use crate::{ControllerState, HighInterruptHandler, LowInterruptHandler};
+use crate::{BasicRuntime, FullRuntime, HighInterruptHandler, LowInterruptHandler, Platform, Runtime};
 
 trait SealedMode {}
 #[allow(private_bounds)]
-pub trait Mode: SealedMode {}
-
-impl<T: SealedMode> Mode for T {}
+pub trait Mode: SealedMode {
+    type Runtime: Runtime;
+}
 
 pub struct Normal;
 pub struct Test;
 
 impl SealedMode for Normal {}
+impl Mode for Normal {
+    type Runtime = FullRuntime;
+}
+
 impl SealedMode for Test {}
+impl Mode for Test {
+    type Runtime = BasicRuntime;
+}
 
 /// Main BLE interface
 ///
@@ -81,28 +79,26 @@ impl SealedMode for Test {}
 ///     // Handle BLE events
 /// }
 /// ```
-pub struct HCI<M: Mode> {
-    controller: Controller,
+pub struct HCI<'d, M: Mode> {
+    controller: Controller<'d, M::Runtime>,
     cmd_sender: CommandSender,
     connections: ConnectionManager<MAX_CONNECTIONS>,
     is_advertising: bool,
     _mode: M,
 }
 
-impl HCI<Normal> {
+impl<'d> HCI<'d, Normal> {
     /// Create a new BLE instance
     ///
     /// Requires hardware peripheral instances for RNG, AES, and PKA.
     /// These are stored in statics so the BLE stack's `extern "C"` callbacks can access them.
     pub async fn new(
-        state: &'static mut ControllerState,
-        rng: &'static Mutex<CriticalSectionRawMutex, RefCell<Rng<'static, RNG>>>,
-        aes: &'static Mutex<CriticalSectionRawMutex, RefCell<Aes<'static, AesPeriph, Blocking>>>,
-        pka: &'static Mutex<CriticalSectionRawMutex, RefCell<Pka<'static, PkaPeriph>>>,
+        platform: &'static Platform,
+        runtime: &'d mut FullRuntime,
         irq: impl interrupt::typelevel::Binding<interrupt::typelevel::RADIO, HighInterruptHandler>
         + interrupt::typelevel::Binding<interrupt::typelevel::HASH, LowInterruptHandler>,
     ) -> Result<Self, BleError> {
-        let controller = Controller::new(state, rng, Some(aes), Some(pka), irq)
+        let controller = Controller::new(platform, runtime, irq)
             .await
             .map_err(|_| BleError::InitializationFailed)?;
 
@@ -596,7 +592,7 @@ impl HCI<Normal> {
     }
 }
 
-impl HCI<Test> {
+impl<'d> HCI<'d, Test> {
     /// Create a BLE instance for Direct Test Mode (DTM) only.
     ///
     /// Only RNG is required; AES and PKA are left unset. Use this for FCC DTM
@@ -606,13 +602,13 @@ impl HCI<Test> {
     /// Performs the minimum initialization required before issuing DTM commands
     /// (HCI_LE_Transmitter_Test, HCI_LE_Receiver_Test, HCI_LE_Test_End).
     /// Does not initialize GATT or GAP — those layers are not used in DTM.
-    pub async fn new_dtm(
-        state: &'static mut ControllerState,
-        rng: &'static Mutex<CriticalSectionRawMutex, RefCell<Rng<'static, RNG>>>,
+    pub async fn new_dtm<T: Runtime>(
+        platform: &'static Platform,
+        runtime: &'d mut T,
         irq: impl interrupt::typelevel::Binding<interrupt::typelevel::RADIO, HighInterruptHandler>
         + interrupt::typelevel::Binding<interrupt::typelevel::HASH, LowInterruptHandler>,
     ) -> Result<Self, BleError> {
-        let controller = Controller::new(state, rng, None, None, irq)
+        let controller = Controller::new(platform, runtime.to_basic(), irq)
             .await
             .map_err(|_| BleError::InitializationFailed)?;
 
@@ -707,7 +703,7 @@ impl HCI<Test> {
     }
 }
 
-impl<M: Mode> HCI<M> {
+impl<'d, M: Mode> HCI<'d, M> {
     /// Fully tear down the BLE stack and return the controller state.
     ///
     /// Terminates all connections, resets the HCI controller (which resets the radio
@@ -722,7 +718,7 @@ impl<M: Mode> HCI<M> {
     ///
     /// - `Ok(&'static mut ControllerState)` on success
     /// - `Err(BleError)` if the HCI reset failed
-    pub fn deinit(mut self) -> Result<&'static mut ControllerState, BleError> {
+    pub fn deinit(mut self) -> Result<(), BleError> {
         // Terminate all active connections cleanly
         for conn in self.connections.iter() {
             // 0x16 = "local host terminated connection"
@@ -734,7 +730,7 @@ impl<M: Mode> HCI<M> {
         self.cmd_sender.reset()?;
 
         self.is_advertising = false;
-        Ok(self.controller.release_state())
+        Ok(())
     }
 
     /// Read the next BLE event

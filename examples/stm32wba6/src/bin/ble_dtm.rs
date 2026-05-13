@@ -18,8 +18,6 @@
 #![no_std]
 #![no_main]
 
-use core::cell::RefCell;
-
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::exti::ExtiInput;
@@ -29,11 +27,8 @@ use embassy_stm32::rng::{self, Rng};
 use embassy_stm32::{Config, bind_interrupts, exti, interrupt};
 use embassy_stm32_wpan::bluetooth::HCI;
 use embassy_stm32_wpan::bluetooth::hci::types::DtmPacketPayload;
-use embassy_stm32_wpan::{HighInterruptHandler, LowInterruptHandler, new_controller_state};
-use embassy_sync::blocking_mutex::Mutex;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
+use embassy_stm32_wpan::{HighInterruptHandler, LowInterruptHandler, Platform, new_platform};
 use embassy_time::Timer;
-use static_cell::StaticCell;
 use {defmt_rtt as _, panic_probe as _};
 
 // ---- Test configuration ----
@@ -55,8 +50,20 @@ bind_interrupts!(struct Irqs {
     HASH => LowInterruptHandler;
 });
 
+/// RNG runner task
+#[embassy_executor::task]
+async fn rng_runner_task(platform: &'static Platform) {
+    platform.run_rng().await
+}
+
+/// BLE runner task - drives the BLE stack sequencer
+#[embassy_executor::task]
+async fn ble_runner_task(platform: &'static Platform) {
+    platform.run_ble().await
+}
+
 #[embassy_executor::main]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     let mut config = Config::default();
     {
         use embassy_stm32::rcc::*;
@@ -123,13 +130,19 @@ async fn main(_spawner: Spawner) {
     button.wait_for_falling_edge().await;
     info!("Button pressed — initialising BLE");
 
-    static RNG_INST: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<Rng<'static, RNG>>>> = StaticCell::new();
-    let rng = RNG_INST.init(Mutex::new(RefCell::new(Rng::new(p.RNG, Irqs))));
+    // Initialize hardware peripherals required by BLE stack
+    let (platform, runtime) = new_platform!(Rng::new(p.RNG, Irqs), 8);
 
-    info!("Hardware peripherals initialized (RNG)");
+    info!("Hardware peripherals initialized (RNG, AES, PKA)");
+
+    // Spawn the RNG runner task
+    spawner.spawn(rng_runner_task(platform).expect("Failed to spawn rng runner"));
+
+    // Spawn the BLE runner task (required for proper BLE operation)
+    spawner.spawn(ble_runner_task(platform).expect("Failed to spawn BLE runner"));
 
     // Initialize BLE stack
-    let mut dtm_ble = HCI::new_dtm(new_controller_state!(8), rng, Irqs)
+    let mut dtm_ble = HCI::new_dtm(platform, runtime, Irqs)
         .await
         .expect("BLE initialization failed");
 

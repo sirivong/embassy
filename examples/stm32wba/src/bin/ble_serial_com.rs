@@ -26,13 +26,10 @@
 #![no_std]
 #![no_main]
 
-use core::cell::RefCell;
-
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::aes::{self, Aes};
-use embassy_stm32::mode::Blocking;
-use embassy_stm32::peripherals::{AES as AesPeriph, PKA as PkaPeriph, RNG};
+use embassy_stm32::peripherals::{AES as AesPeriph, PKA as PkaPeriph};
 use embassy_stm32::pka::{self, Pka};
 use embassy_stm32::rcc::{
     AHB5Prescaler, AHBPrescaler, APBPrescaler, Hse, HsePrescaler, LsConfig, LseConfig, LseDrive, LseMode, Pll, PllDiv,
@@ -48,8 +45,7 @@ use embassy_stm32_wpan::bluetooth::gatt::{
     CHAR_VALUE_HANDLE_OFFSET, CccdValue, CharProperties, CharacteristicHandle, GattEventMask, SecurityPermissions,
     ServiceHandle, ServiceType, Uuid, is_cccd_handle, is_value_handle,
 };
-use embassy_stm32_wpan::{HighInterruptHandler, LowInterruptHandler, ble_runner, new_controller_state};
-use embassy_sync::blocking_mutex::Mutex;
+use embassy_stm32_wpan::{HighInterruptHandler, LowInterruptHandler, Platform, new_platform};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embedded_io_async::{Read, Write};
@@ -68,10 +64,16 @@ bind_interrupts!(struct Irqs {
     HASH => LowInterruptHandler;
 });
 
+/// RNG runner task
+#[embassy_executor::task]
+async fn rng_runner_task(platform: &'static Platform) {
+    platform.run_rng().await
+}
+
 /// BLE runner task - drives the BLE stack sequencer
 #[embassy_executor::task]
-async fn ble_runner_task() {
-    ble_runner().await
+async fn ble_runner_task(platform: &'static Platform) {
+    platform.run_ble().await
 }
 
 // Nordic UART Service (NUS) UUIDs - compatible with nRF Connect and similar apps
@@ -211,17 +213,20 @@ async fn main(spawner: Spawner) {
     info!("Based on ST BLE_SerialCom_Peripheral");
 
     // Initialize hardware peripherals required by BLE stack
-    static RNG_CELL: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<Rng<'static, RNG>>>> = StaticCell::new();
-    let rng = RNG_CELL.init(Mutex::new(RefCell::new(Rng::new(p.RNG, Irqs))));
-
-    static AES_INST: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<Aes<'static, AesPeriph, Blocking>>>> =
-        StaticCell::new();
-    let aes = AES_INST.init(Mutex::new(RefCell::new(Aes::new_blocking(p.AES, Irqs))));
-
-    static PKA_INST: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<Pka<'static, PkaPeriph>>>> = StaticCell::new();
-    let pka = PKA_INST.init(Mutex::new(RefCell::new(Pka::new_blocking(p.PKA, Irqs))));
+    let (platform, runtime) = new_platform!(
+        Rng::new(p.RNG, Irqs),
+        Aes::new_blocking(p.AES, Irqs),
+        Pka::new_blocking(p.PKA, Irqs),
+        8
+    );
 
     info!("Hardware peripherals initialized (RNG, AES, PKA)");
+
+    // Spawn the RNG runner task
+    spawner.spawn(rng_runner_task(platform).expect("Failed to spawn rng runner"));
+
+    // Spawn the BLE runner task (required for proper BLE operation)
+    spawner.spawn(ble_runner_task(platform).expect("Failed to spawn BLE runner"));
 
     // Initialize USART1 for terminal communication
     // NUCLEO-WBA boards: PB12 = TX, PA8 = RX (ST-Link VCP)
@@ -239,11 +244,8 @@ async fn main(spawner: Spawner) {
     let (uart_tx, uart_rx) = uart.split();
     info!("USART1 initialized (115200 baud, PB12=TX, PA8=RX)");
 
-    // Spawn the BLE runner task
-    spawner.spawn(ble_runner_task().expect("Failed to create BLE runner task"));
-
     // Initialize BLE stack
-    let mut ble = HCI::new(new_controller_state!(8), rng, aes, pka, Irqs)
+    let mut ble = HCI::new(platform, runtime, Irqs)
         .await
         .expect("BLE initialization failed");
 

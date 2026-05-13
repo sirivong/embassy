@@ -75,7 +75,6 @@
 #![cfg(feature = "wba")]
 #![allow(clippy::missing_safety_doc)]
 
-use core::cell::RefCell;
 use core::ptr;
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicPtr, AtomicU32, Ordering, compiler_fence};
 
@@ -84,19 +83,16 @@ use cortex_m::peripheral::NVIC;
 use cortex_m::register::basepri;
 use critical_section;
 use embassy_stm32::NVIC_PRIO_BITS;
-use embassy_stm32::aes::{Aes, AesEcb, Direction};
-use embassy_stm32::mode::Blocking;
+use embassy_stm32::aes::{AesEcb, Direction};
 use embassy_stm32::pac::{FLASH, PWR, RCC};
-use embassy_stm32::peripherals::{AES as AesPeriph, PKA as PkaPeriph, RNG};
-use embassy_stm32::pka::{EccPoint, EcdsaCurveParams, Pka};
-use embassy_stm32::rng::Rng;
-use embassy_sync::blocking_mutex::CriticalSectionMutex;
+use embassy_stm32::pka::{EccPoint, EcdsaCurveParams};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::zerocopy_channel;
 use embassy_time::{Duration, Instant, block_for};
 use stm32_bindings::ble::BLEPLATCB_TimerExpiry;
 
 use crate::controller::ChannelPacket;
+use crate::platform::Platform;
 use crate::wba::bindings::{link_layer, mac};
 use crate::wba::host_if::{TASK_BLE_HOST_MASK, TASK_PRIO_BLE_HOST};
 use crate::wba::util_seq;
@@ -153,16 +149,18 @@ static mut CS_RESTORE_STATE: Option<critical_section::RestoreState> = None;
 // Optional hardware RNG instance for true random number generation.
 // The RNG peripheral pointer is stored here to be used by LINKLAYER_PLAT_GetRNG.
 // This must be set by the application using `set_rng_instance` before the link layer requests random numbers.
-pub(crate) static mut HARDWARE_RNG: Option<&'static CriticalSectionMutex<RefCell<Rng<'static, RNG>>>> = None;
-
-// Hardware AES and PKA driver instances, following the HARDWARE_RNG pattern.
-// Stored as statics so the extern "C" BLEPLAT callbacks can access them.
-pub(crate) static mut HARDWARE_AES: Option<&'static CriticalSectionMutex<RefCell<Aes<'static, AesPeriph, Blocking>>>> =
-    None;
-pub(crate) static mut HARDWARE_PKA: Option<&'static CriticalSectionMutex<RefCell<Pka<'static, PkaPeriph>>>> = None;
+pub(crate) static mut PLATFORM: Option<&'static Platform> = None;
 
 pub(crate) static mut EVENT_CHANNEL: Option<zerocopy_channel::Sender<'static, CriticalSectionRawMutex, ChannelPacket>> =
     None;
+
+const fn get_platform() -> &'static Platform {
+    unsafe { PLATFORM.as_ref().expect("PLATFORM not initialized") }
+}
+
+const fn get_channel() -> &'static mut zerocopy_channel::Sender<'static, CriticalSectionRawMutex, ChannelPacket> {
+    unsafe { EVENT_CHANNEL.as_mut().expect("EVENT_CHANNEL not initialized") }
+}
 
 // ============================================================================
 // AES-128 ECB Hardware Acceleration (Embassy driver)
@@ -170,9 +168,7 @@ pub(crate) static mut EVENT_CHANNEL: Option<zerocopy_channel::Sender<'static, Cr
 
 /// Perform AES-128 ECB encryption using the Embassy AES driver.
 fn aes_ecb_encrypt(key: &[u8; 16], input: &[u8; 16], output: &mut [u8; 16]) {
-    critical_section::with(|cs| {
-        let aes_ref = unsafe { HARDWARE_AES.as_ref() }.expect("HARDWARE_AES not initialized");
-        let mut aes = aes_ref.borrow(cs).borrow_mut();
+    get_platform().borrow_aes(|aes| {
         let cipher = AesEcb::new(key);
         let mut ctx = aes.start(&cipher, Direction::Encrypt);
         aes.payload_blocking(&mut ctx, input, output, true).unwrap();
@@ -306,11 +302,7 @@ fn pka_p256_mul(k: &[u32; 8], px: &[u32; 8], py: &[u32; 8], rx: &mut [u32; 8], r
     let curve = EcdsaCurveParams::nist_p256();
     let mut result = EccPoint::new(32);
 
-    let status = critical_section::with(|cs| {
-        let pka_ref = unsafe { HARDWARE_PKA.as_ref() }.expect("HARDWARE_PKA not initialized");
-        let mut pka = pka_ref.borrow(cs).borrow_mut();
-        pka.ecc_mul(&curve, &k_be, &px_be, &py_be, &mut result)
-    });
+    let status = get_platform().borrow_pka(|pka| pka.ecc_mul(&curve, &k_be, &px_be, &py_be, &mut result));
 
     match status {
         Ok(()) => {
@@ -319,8 +311,8 @@ fn pka_p256_mul(k: &[u32; 8], px: &[u32; 8], py: &[u32; 8], rx: &mut [u32; 8], r
             be_bytes_to_words_le(&result.y[..32], ry);
             0
         }
-        Err(_e) => {
-            warn!("PKA ECC mul failed");
+        Err(e) => {
+            warn!("PKA ECC mul failed: {}", e);
             -1
         }
     }
@@ -796,14 +788,9 @@ pub unsafe extern "C" fn LINKLAYER_PLAT_GetRNG(ptr_rnd: *mut u8, len: u32) {
         return;
     }
 
-    critical_section::with(|cs| {
-        HARDWARE_RNG
-            .as_ref()
-            .unwrap()
-            .borrow(cs)
-            .borrow_mut()
-            .fill_bytes(core::slice::from_raw_parts_mut(ptr_rnd, len as usize))
-    });
+    get_platform()
+        .try_fill_bytes(core::slice::from_raw_parts_mut(ptr_rnd, len as usize))
+        .expect("LINKLAYER_PLAT_GetRNG: could not fill bytes");
 
     trace!("LINKLAYER_PLAT_GetRNG: generated {} random bytes", len);
 }
@@ -1259,14 +1246,9 @@ pub unsafe extern "C" fn BLEPLAT_RngGet(n: u8, val: *mut u32) {
         return;
     }
 
-    critical_section::with(|cs| {
-        HARDWARE_RNG
-            .as_ref()
-            .unwrap()
-            .borrow(cs)
-            .borrow_mut()
-            .fill_bytes(core::slice::from_raw_parts_mut(val as *mut u8, n as usize * 4));
-    });
+    get_platform()
+        .try_fill_bytes(core::slice::from_raw_parts_mut(val as *mut u8, n as usize * 4))
+        .expect("BLEPLAT_RngGet: could not fill bytes");
 }
 
 /// AES ECB encrypt function using hardware AES peripheral.
@@ -1897,13 +1879,9 @@ pub unsafe extern "C" fn BLECB_Indication(data: *const u8, length: u16, ext_data
         }
     } else {
         debug!("Other Event: {:x}", event_data[..10.min(event_data.len())]);
-
-        // TODO: handle these events
-
-        // return 0;
     }
 
-    let Some(mut slot) = unsafe { EVENT_CHANNEL.as_mut() }.unwrap().try_send() else {
+    let Some(mut slot) = get_channel().try_send() else {
         return 0;
     };
 

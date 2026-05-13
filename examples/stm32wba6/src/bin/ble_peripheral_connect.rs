@@ -17,12 +17,9 @@
 #![no_std]
 #![no_main]
 
-use core::cell::RefCell;
-
 use defmt::*;
 use embassy_executor::Spawner;
 use embassy_stm32::aes::{self, Aes};
-use embassy_stm32::mode::Blocking;
 use embassy_stm32::peripherals::{AES, PKA, RNG};
 use embassy_stm32::pka::{self, Pka};
 use embassy_stm32::rcc::{
@@ -35,10 +32,7 @@ use embassy_stm32::{Config, bind_interrupts};
 use embassy_stm32_wpan::bluetooth::HCI;
 use embassy_stm32_wpan::bluetooth::gap::{AdvData, AdvParams, AdvType, GapEvent};
 use embassy_stm32_wpan::bluetooth::gatt::{CharProperties, GattEventMask, SecurityPermissions, ServiceType, Uuid};
-use embassy_stm32_wpan::{HighInterruptHandler, LowInterruptHandler, ble_runner, new_controller_state};
-use embassy_sync::blocking_mutex::Mutex;
-use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
-use static_cell::StaticCell;
+use embassy_stm32_wpan::{HighInterruptHandler, LowInterruptHandler, Platform, new_platform};
 use stm32wb_hci::event::ConnectionRole;
 use {defmt_rtt as _, panic_probe as _};
 
@@ -50,10 +44,16 @@ bind_interrupts!(struct Irqs {
     HASH => LowInterruptHandler;
 });
 
+/// RNG runner task
+#[embassy_executor::task]
+async fn rng_runner_task(platform: &'static Platform) {
+    platform.run_rng().await
+}
+
 /// BLE runner task - drives the BLE stack sequencer
 #[embassy_executor::task]
-async fn ble_runner_task() {
-    ble_runner().await
+async fn ble_runner_task(platform: &'static Platform) {
+    platform.run_ble().await
 }
 
 #[embassy_executor::main]
@@ -110,23 +110,23 @@ async fn main(spawner: Spawner) {
     }
 
     // Initialize hardware peripherals required by BLE stack
-    static RNG_INST: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<Rng<'static, RNG>>>> = StaticCell::new();
-    let rng = RNG_INST.init(Mutex::new(RefCell::new(Rng::new(p.RNG, Irqs))));
-
-    static AES_INST: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<Aes<'static, AES, Blocking>>>> =
-        StaticCell::new();
-    let aes = AES_INST.init(Mutex::new(RefCell::new(Aes::new_blocking(p.AES, Irqs))));
-
-    static PKA_INST: StaticCell<Mutex<CriticalSectionRawMutex, RefCell<Pka<'static, PKA>>>> = StaticCell::new();
-    let pka = PKA_INST.init(Mutex::new(RefCell::new(Pka::new_blocking(p.PKA, Irqs))));
+    let (platform, runtime) = new_platform!(
+        Rng::new(p.RNG, Irqs),
+        Aes::new_blocking(p.AES, Irqs),
+        Pka::new_blocking(p.PKA, Irqs),
+        8
+    );
 
     info!("Hardware peripherals initialized (RNG, AES, PKA)");
 
+    // Spawn the RNG runner task
+    spawner.spawn(rng_runner_task(platform).expect("Failed to spawn rng runner"));
+
     // Spawn the BLE runner task (required for proper BLE operation)
-    spawner.spawn(ble_runner_task().expect("Failed to spawn BLE runner"));
+    spawner.spawn(ble_runner_task(platform).expect("Failed to spawn BLE runner"));
 
     // Initialize BLE stack
-    let mut ble = HCI::new(new_controller_state!(8), rng, aes, pka, Irqs)
+    let mut ble = HCI::new(platform, runtime, Irqs)
         .await
         .expect("BLE initialization failed");
 
