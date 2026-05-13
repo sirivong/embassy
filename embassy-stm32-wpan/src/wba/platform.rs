@@ -141,7 +141,24 @@ impl Platform {
         }
     }
 
-    pub(crate) fn borrow_aes<R>(&self, f: impl FnOnce(&mut Aes<'static, AesPeriph, Blocking>) -> R) -> R {
+    /// Fill `buf` with random bytes from the BLE platform's RNG pipe.
+    ///
+    /// The pipe is fed by [`Self::run_rng`] using the same hardware RNG that
+    /// backs the BLE controller, so applications sharing this `Platform` for
+    /// crypto don't need a second `Rng` instance.
+    pub async fn fill_random_bytes(&self, buf: &mut [u8]) {
+        let mut filled = 0;
+        while filled < buf.len() {
+            let n = self.pipe.read(&mut buf[filled..]).await;
+            filled += n;
+        }
+    }
+
+    /// Borrow the shared AES peripheral for the duration of `f`.
+    ///
+    /// Panics if the platform was built with [`Self::new_basic`] (no AES).
+    /// Held under a critical section, so `f` should be short.
+    pub fn borrow_aes<R>(&self, f: impl FnOnce(&mut Aes<'static, AesPeriph, Blocking>) -> R) -> R {
         critical_section::with(|cs| {
             let mut aes = self
                 .aes
@@ -154,7 +171,12 @@ impl Platform {
         })
     }
 
-    pub(crate) fn borrow_pka<R>(&self, f: impl FnOnce(&mut Pka<'static, PkaPeriph>) -> R) -> R {
+    /// Borrow the shared PKA peripheral for the duration of `f`.
+    ///
+    /// Panics if the platform was built with [`Self::new_basic`] (no PKA).
+    /// Held under a critical section; long operations (e.g. P-256 ECDH) will
+    /// delay BLE LL interrupts until `f` returns.
+    pub fn borrow_pka<R>(&self, f: impl FnOnce(&mut Pka<'static, PkaPeriph>) -> R) -> R {
         critical_section::with(|cs| {
             let mut pka = self
                 .pka
