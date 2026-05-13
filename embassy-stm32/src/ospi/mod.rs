@@ -325,7 +325,7 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
     }
 
     #[cfg(octospim_v1)]
-    fn restore_octospis_after_config(octospi1_was_enabled: bool, octospi2_was_enabled: bool) {
+    fn restore_octospis_after_config(octospi1_was_enabled: bool, _octospi2_was_enabled: bool) {
         if T::OCTOSPI_IDX == 1 || octospi1_was_enabled {
             crate::peripherals::OCTOSPI1::REGS.cr().modify(|w| {
                 w.set_en(true);
@@ -333,7 +333,7 @@ impl<'d, T: Instance, M: PeriMode> Ospi<'d, T, M> {
         }
 
         #[cfg(all(octospim_v1, peri_octospi2))]
-        if T::OCTOSPI_IDX == 2 || octospi2_was_enabled {
+        if T::OCTOSPI_IDX == 2 || _octospi2_was_enabled {
             crate::peripherals::OCTOSPI2::REGS.cr().modify(|w| {
                 w.set_en(true);
             });
