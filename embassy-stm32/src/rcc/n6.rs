@@ -774,7 +774,7 @@ fn init_pll(pll_config: Option<Pll>, pll_index: usize, input: &PllInput) -> PllO
                 divn: Some(Hertz(n)),
                 divp1: Some(Hertz(p1)),
                 divp2: Some(Hertz(p2)),
-                output: Some(Hertz(in_clk.0 / m * n / p1)),
+                output: Some(Hertz(in_clk.0 / m * n / p1 / p2)),
             }
         }
         Some(Pll::Bypass { source }) => {
