@@ -533,18 +533,25 @@ impl<'d, T: Instance<Regs = crate::pac::adc::Adc4>> super::Adc<'d, T> {
     /// ## Threshold scaling
     ///
     /// The hardware AWD comparison is always against a 12-bit register value, but the data
-    /// format depends on whether oversampling is active:
+    /// format and threshold encoding depend on whether oversampling is active and which watchdog
+    /// is selected.
     ///
     /// **Without oversampling (RM Table 158):** comparison is on left-aligned 12-bit raw data.
     /// For N-bit resolution, `DR` returns a right-aligned N-bit value while the hardware
     /// left-aligns it to 12 bits for comparison.  This method left-shifts caller thresholds by
     /// `(12 - N)` automatically so you may pass values in the same range as `DR`.
     ///
-    /// **With oversampling ([`Adc::set_averaging_adc4`]):** `RES` bits are ignored; comparison
-    /// is on `ADC_DR[15:4]` (the 12 MSBs of the 16-bit data register).  With the matched
+    /// **With oversampling ([`Adc::set_averaging_adc4`]):** `RES` bits are ignored; all three
+    /// AWDs compare `ADC_DR[15:4]` against their threshold register.  With the matched
     /// right-shift used by [`Adc::set_averaging_adc4`], `DR` holds a 12-bit result in
-    /// `DR[11:0]` and the effective window is `DR[11:4]` vs `HTx[7:0]`/`LTx[7:0]`.  This
-    /// method right-shifts caller thresholds by 4 automatically.
+    /// `DR[11:0]` and the effective comparison window is the upper 8 bits.  **Pass thresholds
+    /// in the same 12-bit space as `DR`** — this method handles the register encoding
+    /// difference transparently:
+    ///
+    /// - **AWD1** stores its comparison value in `HT1[7:0]`; this method right-shifts by 4.
+    /// - **AWD2/AWD3** store the comparison value in `HT[11:4]` (lower 4 bits are hardware-
+    ///   ignored); writing the raw threshold places `T>>4` in `HT[11:4]` automatically — no
+    ///   explicit shift is applied.
     ///
     /// The returned [`AnalogWatchdog`] does **not** borrow the ADC, so you may use the ADC for
     /// DMA or other operations while the watchdog is active.  Call [`AnalogWatchdog::wait`] to
@@ -572,11 +579,25 @@ impl<'d, T: Instance<Regs = crate::pac::adc::Adc4>> super::Adc<'d, T> {
         );
 
         let (lt, ht) = if T::regs().cfgr2().read().ovse() {
-            // During oversampling RES bits are ignored; comparison is on ADC_DR[15:4] (RM:
-            // "most significant 12 bits of the 16-bit oversampled result").  With matched OVSS
-            // (log2 of ratio), DR holds a 12-bit result so the effective window is DR[11:4] —
-            // 8 bits.  HTx[11:8]/LTx[11:8] must be zero; scale caller thresholds >> 4.
-            (low_threshold >> 4, high_threshold >> 4)
+            // Under OVS all three AWDs compare ADC_DR[15:4] against the threshold register.
+            // With matched OVSS (log2 of ratio), DR holds a 12-bit result in DR[11:0], so
+            // the effective comparison window is DR[11:4] — 8 bits.
+            //
+            // However the threshold register bit layout differs between AWD1 and AWD2/AWD3:
+            //
+            //   AWD1  — comparison value in HT1[7:0]; HT1[11:8] must be zero.
+            //           Formula: write (T >> 4) so that HT1[7:0] holds the right value.
+            //
+            //   AWD2/AWD3 — 8-bit effective resolution; lower 4 threshold bits are hardware-
+            //           ignored; comparison is HT[11:4] vs DR[15:4].
+            //           Formula: write T as-is — HT[11:4] = T[11:4] = T>>4 naturally,
+            //           which is the right comparison value without an explicit shift.
+            //           Applying >>4 here would write (T>>4) into the register, making
+            //           HT[11:4] = T>>8 — 16× too low, causing instant false trips.
+            match watchdog {
+                WatchdogIndex::Awd1 => (low_threshold >> 4, high_threshold >> 4),
+                _ => (low_threshold, high_threshold),
+            }
         } else {
             // Without oversampling, comparison is on left-aligned 12-bit raw data (RM Table 158).
             // DR returns N-bit right-aligned values; left-shift to 12-bit space so the lower
