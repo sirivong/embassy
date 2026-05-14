@@ -75,7 +75,7 @@ pub enum DescriptorError {
     UnexpectedEndOfBuffer,
 }
 
-/// Error returned by [`ConfigurationDescriptor::visit_descriptors`].
+/// Error returned by [`ConfigurationDescriptorChain::visit_descriptors`].
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum VisitError<E> {
@@ -119,7 +119,7 @@ pub trait WritableDescriptor: USBDescriptor {
     /// Writes this descriptor to the start of the byte buffer `bytes`.
     ///
     /// On success, it returns the number of bytes written.
-    /// On failure, it returns a [Self::Error].
+    /// On failure, it returns a [USBDescriptor::Error].
     fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error>;
 }
 
