@@ -3,11 +3,13 @@
 
 use embassy_usb_driver::host::HostError;
 use embassy_usb_driver::{Direction, EndpointInfo, EndpointType};
+use heapless::Vec;
 
 /// Standard descriptor type constants.
 pub mod descriptor_type {
     pub const DEVICE: u8 = 0x01;
     pub const CONFIGURATION: u8 = 0x02;
+    pub const STRING: u8 = 0x03;
     pub const INTERFACE: u8 = 0x04;
     pub const ENDPOINT: u8 = 0x05;
 
@@ -943,6 +945,62 @@ impl From<EndpointDescriptor> for EndpointInfo {
     }
 }
 
+/// String Descriptor Zero (USB 2.0 §9.6.7)
+///
+/// A descriptor with index 0 specifies which languages are supported by the device.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct StringDescriptorZero {
+    /// LANGID codes
+    pub lang_ids: Vec<u16, { (Self::MAX_LEN - 2) as usize / size_of::<u16>() }>,
+}
+
+impl VariableSizeDescriptor for StringDescriptorZero {
+    const MIN_LEN: u8 = 2;
+    const MAX_LEN: u8 = 254;
+
+    /// Matches len with the size of a lang_id value.
+    #[inline(always)]
+    fn match_bytes_len(bytes: &[u8]) -> bool {
+        let len = bytes[0];
+        (len - 2).is_multiple_of(2)
+    }
+}
+
+impl USBDescriptor for StringDescriptorZero {
+    const BUF_SIZE: usize = Self::MAX_LEN as usize;
+    const DESC_TYPE: u8 = descriptor_type::STRING;
+    type Error = DescriptorError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::match_bytes(bytes)?;
+        let len = bytes[0];
+        let mut lang_ids = Vec::new();
+        for i in (2..len as usize).step_by(2) {
+            if let Some(data) = bytes.get(i..i + 2) {
+                let lang_id = u16::from_le_bytes([data[0], data[1]]);
+                lang_ids.push(lang_id).map_err(|_| DescriptorError::NotImplemented)?;
+            }
+        }
+        Ok(Self { lang_ids })
+    }
+}
+
+impl WritableDescriptor for StringDescriptorZero {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        assert!(self.lang_ids.capacity() <= (u8::MAX - 2) as usize / size_of::<u16>());
+        let n = self.lang_ids.len();
+        Self::prepare_bytes(bytes, 2 + 2 * n as u8)?;
+        self.lang_ids
+            .iter()
+            .zip(bytes[2..].as_chunks_mut::<2>().0)
+            .for_each(|(&lang_id, data)| {
+                [data[0], data[1]] = lang_id.to_le_bytes();
+            });
+        Ok(bytes[0] as usize)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use heapless::Vec;
@@ -1192,5 +1250,21 @@ mod test {
             Ok(EndpointDescriptor::MIN_LEN as usize)
         );
         assert_eq!(EndpointDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_string_descriptor_zero() {
+        let mut lang_ids = Vec::new();
+        for i in 0..lang_ids.capacity() {
+            lang_ids.push(0x1122 + i as u16).expect("must fit");
+        }
+        for n in 0..lang_ids.capacity() {
+            let mut lang_ids = lang_ids.clone();
+            lang_ids.truncate(n);
+            let descriptor = StringDescriptorZero { lang_ids };
+            let mut bytes = [0u8; StringDescriptorZero::BUF_SIZE];
+            assert_eq!(descriptor.write_to_bytes(&mut bytes), Ok(2 + 2 * n));
+            assert_eq!(StringDescriptorZero::try_from_bytes(&bytes), Ok(descriptor));
+        }
     }
 }
