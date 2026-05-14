@@ -18,6 +18,45 @@ pub mod descriptor_type {
     pub const CS_ENDPOINT: u8 = 0x25;
 }
 
+/// Language Identifiers (USB Language Identifiers 1.0)
+///
+/// The lower 10 bits have the primary language.
+/// The upper 6 bits have the sub language.
+///
+/// The descriptor [StringDescriptorZero] specifies which language identifiers are supported.
+pub mod lang_id {
+    /// English
+    pub const ENGLISH: u16 = 0x009;
+    pub mod english {
+        /// English (United states)
+        pub const US: u16 = super::ENGLISH | (0x01 << 10);
+        /// English (United Kingdom)
+        pub const UK: u16 = super::ENGLISH | (0x02 << 10);
+        /// English (Australian)
+        pub const AUS: u16 = super::ENGLISH | (0x03 << 10);
+        /// English (Canadian)
+        pub const CAN: u16 = super::ENGLISH | (0x04 << 10);
+        /// English (New Zealand)
+        pub const NZ: u16 = super::ENGLISH | (0x05 << 10);
+        /// English (Ireland)
+        pub const EIRE: u16 = super::ENGLISH | (0x06 << 10);
+        /// English (South Africa)
+        pub const SOUTH_AFRICA: u16 = super::ENGLISH | (0x07 << 10);
+        /// English (Jamaica)
+        pub const JAMAICA: u16 = super::ENGLISH | (0x08 << 10);
+        /// English (Caribbean)
+        pub const CARIBBEAN: u16 = super::ENGLISH | (0x09 << 10);
+        /// English (Belize)
+        pub const BELIZE: u16 = super::ENGLISH | (0x0a << 10);
+        /// English (Trinidad)
+        pub const TRINIDAD: u16 = super::ENGLISH | (0x0b << 10);
+        /// English (Zimbabwe)
+        pub const ZIMBABWE: u16 = super::ENGLISH | (0x0c << 10);
+        /// English (Philippines)
+        pub const PHILIPPINES: u16 = super::ENGLISH | (0x0d << 10);
+    }
+}
+
 /// String descriptor index.
 ///
 /// If the index is 0, then there is no string descriptor for that field.
@@ -947,7 +986,7 @@ impl From<EndpointDescriptor> for EndpointInfo {
 
 /// String Descriptor Zero (USB 2.0 §9.6.7)
 ///
-/// A descriptor with index 0 specifies which languages are supported by the device.
+/// A descriptor with index 0 specifies which [languages](lang_id) are supported by the device.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub struct StringDescriptorZero {
