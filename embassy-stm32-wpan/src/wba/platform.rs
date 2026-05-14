@@ -54,6 +54,8 @@
 //! ```
 
 use core::cell::{RefCell, UnsafeCell};
+use core::future::poll_fn;
+use core::task::Poll;
 
 use embassy_futures::select::select;
 use embassy_stm32::aes::Aes;
@@ -148,11 +150,30 @@ impl Platform {
     /// The pipe is fed by [`Self::run_rng`] using the same hardware RNG that
     /// backs the BLE controller, so applications sharing this `Platform` for
     /// crypto don't need a second `Rng` instance.
-    pub async fn fill_random_bytes(&self, buf: &mut [u8]) {
-        let mut filled = 0;
-        while filled < buf.len() {
-            let n = self.pipe.read(&mut buf[filled..]).await;
-            filled += n;
+    pub async fn fill_random_bytes(&self, mut buf: &mut [u8]) {
+        // This implementation does not allow reducing the buffer capacity by more than 64 bytes
+        let mut b;
+        while !buf.is_empty() {
+            let mut wait_full = core::pin::pin!(self.pipe.wait_full());
+
+            let free_capacity = poll_fn(|cx| {
+                // Poll the future in order to register the waker
+                let free_capacity = match wait_full.as_mut().poll(cx) {
+                    Poll::Ready(()) => 0,
+                    Poll::Pending => self.pipe.free_capacity(),
+                };
+
+                if free_capacity < 64 {
+                    Poll::Ready(free_capacity)
+                } else {
+                    Poll::Pending
+                }
+            })
+            .await;
+
+            (b, buf) = buf.split_at_mut(buf.len().min(64 - free_capacity));
+
+            self.pipe.try_read(&mut b).unwrap();
         }
     }
 
