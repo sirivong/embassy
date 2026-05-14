@@ -274,10 +274,13 @@ impl<'d, A: UsbHostAllocator<'d>> BusHandle<'d, A> {
 
         let addr = self.state.alloc_address().ok_or(EnumerationError::NoPipe)?;
 
+        // use smallest size "8", since some devices use lower than default for given speed.
+        const DEFAULT_MAX_PACKET_SIZE: u16 = 8;
+
         let ep0_info = EndpointInfo {
             addr: EndpointAddress::from_parts(0, UsbDirection::In),
             ep_type: EndpointType::Control,
-            max_packet_size: route.device_speed().max_packet_size(),
+            max_packet_size: DEFAULT_MAX_PACKET_SIZE,
             interval_ms: 0,
         };
 
