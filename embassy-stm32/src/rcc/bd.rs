@@ -221,9 +221,13 @@ impl LsConfig {
         #[cfg(backup_sram)]
         {
             #[cfg(stm32h7)]
-            unsafe { super::BKSRAM_RETAINED = crate::pac::PWR.cr2().read().bren() == Retention::PRESERVED };
+            unsafe { 
+                super::BKSRAM_RETAINED = crate::pac::PWR.cr2().read().bren() == Retention::PRESERVED 
+            };
             #[cfg(not(stm32h7))]
-            unsafe { super::BKSRAM_RETAINED = crate::pac::PWR.bdcr().read().bren() == Retention::PRESERVED };
+            unsafe { 
+                super::BKSRAM_RETAINED = crate::pac::PWR.bdcr().read().bren() == Retention::PRESERVED 
+            };
 
             // H7 has an additional backup SRAM enable bit that must be set in the RCC registers
             #[cfg(stm32h7)]
