@@ -3,17 +3,58 @@
 
 use embassy_usb_driver::host::HostError;
 use embassy_usb_driver::{Direction, EndpointInfo, EndpointType};
+use heapless::{String, Vec};
 
 /// Standard descriptor type constants.
 pub mod descriptor_type {
     pub const DEVICE: u8 = 0x01;
     pub const CONFIGURATION: u8 = 0x02;
+    pub const STRING: u8 = 0x03;
     pub const INTERFACE: u8 = 0x04;
     pub const ENDPOINT: u8 = 0x05;
 
     pub const INTERFACE_ASSOCIATION: u8 = 0x0B;
     pub const CS_INTERFACE: u8 = 0x24;
     pub const CS_ENDPOINT: u8 = 0x25;
+}
+
+/// Language Identifiers (USB Language Identifiers 1.0)
+///
+/// The lower 10 bits have the primary language.
+/// The upper 6 bits have the sub language.
+///
+/// The descriptor [StringDescriptorZero] specifies which language identifiers are supported.
+pub mod lang_id {
+    /// English
+    pub const ENGLISH: u16 = 0x009;
+    pub mod english {
+        /// English (United states)
+        pub const US: u16 = super::ENGLISH | (0x01 << 10);
+        /// English (United Kingdom)
+        pub const UK: u16 = super::ENGLISH | (0x02 << 10);
+        /// English (Australian)
+        pub const AUS: u16 = super::ENGLISH | (0x03 << 10);
+        /// English (Canadian)
+        pub const CAN: u16 = super::ENGLISH | (0x04 << 10);
+        /// English (New Zealand)
+        pub const NZ: u16 = super::ENGLISH | (0x05 << 10);
+        /// English (Ireland)
+        pub const EIRE: u16 = super::ENGLISH | (0x06 << 10);
+        /// English (South Africa)
+        pub const SOUTH_AFRICA: u16 = super::ENGLISH | (0x07 << 10);
+        /// English (Jamaica)
+        pub const JAMAICA: u16 = super::ENGLISH | (0x08 << 10);
+        /// English (Caribbean)
+        pub const CARIBBEAN: u16 = super::ENGLISH | (0x09 << 10);
+        /// English (Belize)
+        pub const BELIZE: u16 = super::ENGLISH | (0x0a << 10);
+        /// English (Trinidad)
+        pub const TRINIDAD: u16 = super::ENGLISH | (0x0b << 10);
+        /// English (Zimbabwe)
+        pub const ZIMBABWE: u16 = super::ENGLISH | (0x0c << 10);
+        /// English (Philippines)
+        pub const PHILIPPINES: u16 = super::ENGLISH | (0x0d << 10);
+    }
 }
 
 /// String descriptor index.
@@ -34,7 +75,7 @@ pub enum DescriptorError {
     UnexpectedEndOfBuffer,
 }
 
-/// Error returned by [`ConfigurationDescriptor::visit_descriptors`].
+/// Error returned by [`ConfigurationDescriptorChain::visit_descriptors`].
 #[derive(Debug)]
 #[cfg_attr(feature = "defmt", derive(defmt::Format))]
 pub enum VisitError<E> {
@@ -78,7 +119,7 @@ pub trait WritableDescriptor: USBDescriptor {
     /// Writes this descriptor to the start of the byte buffer `bytes`.
     ///
     /// On success, it returns the number of bytes written.
-    /// On failure, it returns a [Self::Error].
+    /// On failure, it returns a [USBDescriptor::Error].
     fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error>;
 }
 
@@ -943,9 +984,201 @@ impl From<EndpointDescriptor> for EndpointInfo {
     }
 }
 
+/// String Descriptor Zero (USB 2.0 §9.6.7)
+///
+/// A descriptor with index 0 specifies which [languages](lang_id) are supported by the device.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct StringDescriptorZero {
+    /// LANGID codes
+    pub lang_ids: Vec<u16, { (Self::MAX_LEN - 2) as usize / size_of::<u16>() }>,
+}
+
+impl VariableSizeDescriptor for StringDescriptorZero {
+    const MIN_LEN: u8 = 2;
+    const MAX_LEN: u8 = 254;
+
+    /// Matches len with the size of a lang_id value.
+    #[inline(always)]
+    fn match_bytes_len(bytes: &[u8]) -> bool {
+        let len = bytes[0];
+        (len - 2).is_multiple_of(2)
+    }
+}
+
+impl USBDescriptor for StringDescriptorZero {
+    const BUF_SIZE: usize = Self::MAX_LEN as usize;
+    const DESC_TYPE: u8 = descriptor_type::STRING;
+    type Error = DescriptorError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::match_bytes(bytes)?;
+        let len = bytes[0];
+        let mut lang_ids = Vec::new();
+        for i in (2..len as usize).step_by(2) {
+            if let Some(data) = bytes.get(i..i + 2) {
+                let lang_id = u16::from_le_bytes([data[0], data[1]]);
+                lang_ids.push(lang_id).map_err(|_| DescriptorError::NotImplemented)?;
+            }
+        }
+        Ok(Self { lang_ids })
+    }
+}
+
+impl WritableDescriptor for StringDescriptorZero {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        assert!(self.lang_ids.capacity() <= (u8::MAX - 2) as usize / size_of::<u16>());
+        let n = self.lang_ids.len();
+        Self::prepare_bytes(bytes, 2 + 2 * n as u8)?;
+        self.lang_ids
+            .iter()
+            .zip(bytes[2..].as_chunks_mut::<2>().0)
+            .for_each(|(&lang_id, data)| {
+                [data[0], data[1]] = lang_id.to_le_bytes();
+            });
+        Ok(bytes[0] as usize)
+    }
+}
+
+/// String Descriptor (USB 2.0 §9.6.7)
+///
+/// A descriptor with a non-0 index contains UNICODE UTF-16LE text.
+///
+/// Usually it contains text in the language that was requested.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(feature = "defmt", derive(defmt::Format))]
+pub struct StringDescriptor {
+    /// Text in UNICODE UTF-8.
+    pub string: String<{ Self::MAX_UTF8 }>,
+}
+
+impl StringDescriptor {
+    /// Maximum length of the UTF-16 text.
+    pub const MAX_UTF16: usize = (Self::MAX_LEN - 2) as usize / 2;
+
+    /// Maximum length of the UTF-8 text.
+    ///
+    /// Codepoint 0xffff is the biggest possible UTF-16 single value and it needs 3 UTF-8 bytes (ratio 1:3).
+    /// Codepoint 0x10ffff is the biggest poissible UTF-16 double value and it needs 4 UTF-8 bytes (ratio 2:4).
+    /// Therefore, in the worse case, we need 3 UTF-8 bytes for each UTF-16 value.
+    pub const MAX_UTF8: usize = Self::MAX_UTF16 * 3;
+
+    /// Creates a `StringDescriptor` from a [str] slice.
+    ///
+    /// On success, it returns the string descriptor.
+    /// On error, it returns the index where the string must be truncated to fit in the descriptor.
+    pub fn from_str(s: &str) -> Result<Self, usize> {
+        let mut string = String::new();
+        let mut utf16_len = 0;
+        for (index, c) in s.char_indices() {
+            utf16_len += c.len_utf16();
+            if utf16_len <= Self::MAX_UTF16 {
+                let result = string.push(c);
+                debug_assert!(result.is_ok(), "must fit");
+                continue;
+            }
+            return Err(index);
+        }
+        Ok(Self { string })
+    }
+
+    /// Creates a `StringDescriptor` from a [str] slice.
+    ///
+    /// The string will be truncated if it is too big to fit in the descriptor.
+    pub fn from_str_truncate(s: &str) -> Self {
+        let mut string = String::new();
+        let mut utf16_len = 0;
+        for c in s.chars() {
+            utf16_len += c.len_utf16();
+            if utf16_len <= Self::MAX_UTF16 {
+                let result = string.push(c);
+                debug_assert!(result.is_ok(), "must fit");
+                continue;
+            }
+            break; // truncate
+        }
+        Self { string }
+    }
+}
+
+impl TryFrom<&str> for StringDescriptor {
+    type Error = usize;
+    fn try_from(s: &str) -> Result<Self, usize> {
+        Self::from_str(s)
+    }
+}
+
+impl<'a> From<&'a StringDescriptor> for &'a str {
+    fn from(descriptor: &'a StringDescriptor) -> &'a str {
+        descriptor.string.as_str()
+    }
+}
+
+impl core::ops::Deref for StringDescriptor {
+    type Target = str;
+    fn deref(&self) -> &str {
+        <&str>::from(self)
+    }
+}
+
+impl VariableSizeDescriptor for StringDescriptor {
+    const MIN_LEN: u8 = 2;
+    const MAX_LEN: u8 = 254;
+
+    /// Matches len with the size of a UTF-16LE value.
+    #[inline(always)]
+    fn match_bytes_len(bytes: &[u8]) -> bool {
+        let len = bytes[0];
+        (len - 2).is_multiple_of(2)
+    }
+}
+
+impl USBDescriptor for StringDescriptor {
+    const BUF_SIZE: usize = Self::MAX_LEN as usize;
+    const DESC_TYPE: u8 = descriptor_type::STRING;
+    type Error = DescriptorError;
+
+    fn try_from_bytes(bytes: &[u8]) -> Result<Self, Self::Error> {
+        Self::match_bytes(bytes)?;
+        let len = bytes[0];
+        let mut utf16: Vec<u16, { Self::MAX_UTF16 }> = Vec::new();
+        for i in (2..len as usize).step_by(2) {
+            if let Some(data) = bytes.get(i..i + 2) {
+                let value = u16::from_le_bytes([data[0], data[1]]);
+                let result = utf16.push(value);
+                debug_assert!(result.is_ok(), "must fit");
+            }
+        }
+        let string = String::from_utf16(utf16.as_slice()).map_err(|_| DescriptorError::BadDescriptorData)?;
+        Ok(Self { string })
+    }
+}
+
+impl WritableDescriptor for StringDescriptor {
+    fn write_to_bytes(&self, bytes: &mut [u8]) -> Result<usize, Self::Error> {
+        let n = self.string.as_str().chars().fold(0, |n, c| n + c.len_utf16());
+        let len = 2 + 2 * n;
+        if len > Self::MAX_LEN as usize {
+            return Err(DescriptorError::BadDescriptorSize);
+        }
+        Self::prepare_bytes(bytes, len as u8)?;
+        let mut i = 2;
+        for c in self.string.as_str().chars() {
+            let mut utf16 = [0u16; 2];
+            for value in c.encode_utf16(&mut utf16) {
+                if let Some(data) = bytes.get_mut(i..i + 2) {
+                    [data[0], data[1]] = value.to_le_bytes();
+                    i += 2;
+                }
+            }
+        }
+        Ok(bytes[0] as usize)
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use heapless::Vec;
+    use core::ops::Deref;
 
     use super::*;
 
@@ -1192,5 +1425,85 @@ mod test {
             Ok(EndpointDescriptor::MIN_LEN as usize)
         );
         assert_eq!(EndpointDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+    }
+
+    #[test]
+    fn roundtrip_string_descriptor_zero() {
+        let mut lang_ids = Vec::new();
+        for i in 0..lang_ids.capacity() {
+            lang_ids.push(0x1122 + i as u16).expect("must fit");
+        }
+        for n in 0..lang_ids.capacity() {
+            let mut lang_ids = lang_ids.clone();
+            lang_ids.truncate(n);
+            let descriptor = StringDescriptorZero { lang_ids };
+            let mut bytes = [0u8; StringDescriptorZero::BUF_SIZE];
+            assert_eq!(descriptor.write_to_bytes(&mut bytes), Ok(2 + 2 * n));
+            assert_eq!(StringDescriptorZero::try_from_bytes(&bytes), Ok(descriptor));
+        }
+    }
+
+    #[test]
+    fn string_descriptor_from_str_empty() {
+        let descriptor = StringDescriptor { string: String::new() };
+        assert_eq!(StringDescriptor::from_str(""), Ok(descriptor.clone()));
+        assert_eq!(StringDescriptor::try_from(""), Ok(descriptor.clone()));
+        assert_eq!(<&str>::from(&descriptor), "");
+        assert_eq!(descriptor.deref(), "");
+    }
+
+    #[test]
+    fn string_descriptor_from_str_too_big() {
+        let too_big = str::from_utf8(&[b'x'; StringDescriptor::MAX_UTF16 + 1]).expect("must be valid utf8");
+        assert_eq!(StringDescriptor::from_str(too_big), Err(StringDescriptor::MAX_UTF16));
+        assert_eq!(StringDescriptor::try_from(too_big), Err(StringDescriptor::MAX_UTF16));
+    }
+
+    #[test]
+    fn string_descriptor_from_str_truncated() {
+        let too_big = str::from_utf8(&[b'x'; StringDescriptor::MAX_UTF16 + 1]).expect("must be valid utf8");
+        let truncated = &too_big[..StringDescriptor::MAX_UTF16];
+        let descriptor = StringDescriptor {
+            string: String::try_from(truncated).expect("must fit"),
+        };
+        assert_eq!(StringDescriptor::from_str(truncated), Ok(descriptor.clone()));
+        assert_eq!(StringDescriptor::try_from(truncated), Ok(descriptor.clone()));
+        assert_eq!(<&str>::from(&descriptor), truncated);
+        assert_eq!(descriptor.deref(), truncated);
+        assert_eq!(StringDescriptor::from_str_truncate(too_big), descriptor.clone());
+    }
+
+    #[test]
+    fn roundtrip_string_descriptor_1_3() {
+        let c = '\u{FFFD}'; // U+FFFD REPLACEMENT CHARACTER
+        assert_eq!(c.len_utf16(), 1);
+        assert_eq!(c.len_utf8(), 3);
+        for n in 0..StringDescriptor::MAX_UTF16 {
+            let mut string = String::new();
+            for _ in 0..n {
+                string.push(c).expect("must fit");
+            }
+            let descriptor = StringDescriptor { string };
+            let mut bytes = [0u8; StringDescriptor::BUF_SIZE];
+            assert_eq!(descriptor.write_to_bytes(&mut bytes), Ok(2 + 2 * n));
+            assert_eq!(StringDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+        }
+    }
+
+    #[test]
+    fn roundtrip_string_descriptor_2_4() {
+        let c = '\u{10FFFD}'; // U+10FFFD is reserved for private use
+        assert_eq!(c.len_utf16(), 2);
+        assert_eq!(c.len_utf8(), 4);
+        for n in (0..StringDescriptor::MAX_UTF16).step_by(2) {
+            let mut string = String::new();
+            for _ in 0..n / 2 {
+                string.push(c).expect("must fit");
+            }
+            let descriptor = StringDescriptor { string };
+            let mut bytes = [0u8; StringDescriptor::BUF_SIZE];
+            assert_eq!(descriptor.write_to_bytes(&mut bytes), Ok(2 + 2 * n));
+            assert_eq!(StringDescriptor::try_from_bytes(&bytes), Ok(descriptor));
+        }
     }
 }
