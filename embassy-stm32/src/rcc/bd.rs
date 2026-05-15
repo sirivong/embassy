@@ -5,7 +5,7 @@ use core::sync::atomic::{Ordering, compiler_fence};
 use crate::pac::common::{RW, Reg};
 // For the H7, the Retention features live in the pwr registers
 #[cfg(all(backup_sram, not(stm32h7)))]
-use crate::pac::rcc::vals::Retention;
+use crate::pac::pwr::vals::Retention;
 #[cfg(all(stm32h7, backup_sram))]
 use crate::pac::pwr::vals::Retention;
 pub use crate::pac::rcc::vals::Rtcsel as RtcClockSource;
