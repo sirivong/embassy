@@ -51,10 +51,10 @@ impl From<LseDrive> for crate::pac::rcc::vals::Lsedrv {
 
         match value {
             #[cfg(not(stm32h5))] // ES0565: LSE Low drive mode is not functional
-            LseDrive::Low => Lsedrv::LOW,
-            LseDrive::MediumLow => Lsedrv::MEDIUM_LOW,
-            LseDrive::MediumHigh => Lsedrv::MEDIUM_HIGH,
-            LseDrive::High => Lsedrv::HIGH,
+            LseDrive::Low => Lsedrv::Low,
+            LseDrive::MediumLow => Lsedrv::MediumLow,
+            LseDrive::MediumHigh => Lsedrv::MediumHigh,
+            LseDrive::High => Lsedrv::High,
         }
     }
 }
@@ -117,7 +117,7 @@ impl LsConfig {
 
     pub const fn default_lse() -> Self {
         Self {
-            rtc: RtcClockSource::LSE,
+            rtc: RtcClockSource::Lse,
             lse: Some(LseConfig {
                 frequency: Hertz(32_768),
                 mode: LseMode::Oscillator(LseDrive::MediumHigh),
@@ -132,7 +132,7 @@ impl LsConfig {
 
     pub const fn default_lsi() -> Self {
         Self {
-            rtc: RtcClockSource::LSI,
+            rtc: RtcClockSource::Lsi,
             lsi: true,
             lse: None,
             #[cfg(backup_sram)]
@@ -142,7 +142,7 @@ impl LsConfig {
 
     pub const fn off() -> Self {
         Self {
-            rtc: RtcClockSource::DISABLE,
+            rtc: RtcClockSource::Disable,
             lsi: false,
             lse: None,
             #[cfg(backup_sram)]
@@ -161,12 +161,12 @@ impl LsConfig {
     #[cfg(not(stm32n6))]
     pub(crate) fn init(&self) -> Option<Hertz> {
         let rtc_clk = match self.rtc {
-            RtcClockSource::LSI => {
+            RtcClockSource::Lsi => {
                 assert!(self.lsi);
                 Some(LSI_FREQ)
             }
-            RtcClockSource::LSE => Some(self.lse.as_ref().unwrap().frequency),
-            RtcClockSource::DISABLE => None,
+            RtcClockSource::Lse => Some(self.lse.as_ref().unwrap().frequency),
+            RtcClockSource::Disable => None,
             _ => todo!(),
         };
 
@@ -226,7 +226,7 @@ impl LsConfig {
             };
             #[cfg(not(stm32h7))]
             unsafe { 
-                super::BKSRAM_RETAINED = crate::pac::PWR.bdcr().read().bren() == Retention::PRESERVED 
+                unsafe { super::BKSRAM_RETAINED = crate::pac::PWR.bdcr().read().bren() == Retention::Preserved };
             };
 
             // H7 has an additional backup SRAM enable bit that must be set in the RCC registers
@@ -248,8 +248,8 @@ impl LsConfig {
             #[cfg(not(stm32h7))]
             crate::pac::PWR.bdcr().modify(|w| {
                 w.set_bren(match self.enable_backup_sram {
-                    true => Retention::PRESERVED,
-                    false => Retention::LOST,
+                    true => Retention::Preserved,
+                    false => Retention::Lost,
                 });
             });
 
@@ -288,7 +288,7 @@ impl LsConfig {
         }
         #[cfg(not(any(rcc_wba, rcc_n6)))]
         {
-            ok &= reg.rtcen() == (self.rtc != RtcClockSource::DISABLE);
+            ok &= reg.rtcen() == (self.rtc != RtcClockSource::Disable);
         }
         #[cfg(rcc_n6)]
         {
@@ -402,7 +402,7 @@ impl LsConfig {
             }
         }
 
-        if self.rtc != RtcClockSource::DISABLE {
+        if self.rtc != RtcClockSource::Disable {
             #[cfg(not(rcc_n6))]
             bdcr().modify(|w| {
                 #[cfg(any(rtc_v2_h7, rtc_v2_l4, rtc_v2_wb, rtc_v3_base, rtc_v3_u5))]
