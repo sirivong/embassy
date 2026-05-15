@@ -3,7 +3,10 @@ use core::sync::atomic::{Ordering, compiler_fence};
 
 #[cfg(not(stm32n6))]
 use crate::pac::common::{RW, Reg};
-#[cfg(backup_sram)]
+// For the H7, the Retention features live in the pwr registers
+#[cfg(all(backup_sram, not(stm32h7)))]
+use crate::pac::pwr::vals::Retention;
+#[cfg(all(stm32h7, backup_sram))]
 use crate::pac::pwr::vals::Retention;
 pub use crate::pac::rcc::vals::Rtcsel as RtcClockSource;
 use crate::time::Hertz;
@@ -217,8 +220,32 @@ impl LsConfig {
         // Enable backup regulator for peristent battery backed sram
         #[cfg(backup_sram)]
         {
-            unsafe { super::BKSRAM_RETAINED = crate::pac::PWR.bdcr().read().bren() == Retention::Preserved };
+            #[cfg(stm32h7)]
+            unsafe {
+                super::BKSRAM_RETAINED = crate::pac::PWR.cr2().read().bren() == Retention::PRESERVED
+            };
+            #[cfg(not(stm32h7))]
+            unsafe {
+                super::BKSRAM_RETAINED = crate::pac::PWR.bdcr().read().bren() == Retention::Preserved
+            };
 
+            // H7 has an additional backup SRAM enable bit that must be set in the RCC registers
+            #[cfg(stm32h7)]
+            crate::pac::RCC.ahb4enr().modify(|w| {
+                w.set_bkpsramen(true);
+            });
+
+            #[cfg(stm32h7)]
+            assert!(crate::pac::PWR.cr1().read().dbp() == true);
+
+            #[cfg(stm32h7)]
+            crate::pac::PWR.cr2().modify(|w| {
+                w.set_bren(match self.enable_backup_sram {
+                    true => Retention::PRESERVED,
+                    false => Retention::LOST,
+                });
+            });
+            #[cfg(not(stm32h7))]
             crate::pac::PWR.bdcr().modify(|w| {
                 w.set_bren(match self.enable_backup_sram {
                     true => Retention::Preserved,
@@ -227,6 +254,9 @@ impl LsConfig {
             });
 
             // Wait for backup regulator voltage to stabilize
+            #[cfg(stm32h7)]
+            while self.enable_backup_sram && !crate::pac::PWR.cr2().read().brrdy() {}
+            #[cfg(not(stm32h7))]
             while self.enable_backup_sram && !crate::pac::PWR.bdsr().read().brrdy() {}
         }
 

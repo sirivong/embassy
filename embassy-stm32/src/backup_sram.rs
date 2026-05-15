@@ -17,7 +17,10 @@ impl BackupMemory {
     /// Returns slice to sram and whether the sram was retained
     pub fn new(_backup_sram: Peri<'static, BKPSRAM>) -> Self {
         // Assert bksram has been enabled in rcc
+        #[cfg(not(stm32h7))]
         assert!(crate::pac::PWR.bdcr().read().bren() == crate::pac::pwr::vals::Retention::Preserved);
+        #[cfg(stm32h7)]
+        assert!(crate::pac::PWR.cr2().read().bren() == crate::pac::pwr::vals::Retention::Preserved);
 
         Self {
             // SAFETY: It is safe to read this static mut in the CS
