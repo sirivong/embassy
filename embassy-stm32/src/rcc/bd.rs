@@ -221,11 +221,11 @@ impl LsConfig {
         #[cfg(backup_sram)]
         {
             #[cfg(stm32h7)]
-            unsafe { 
+            unsafe {
                 super::BKSRAM_RETAINED = crate::pac::PWR.cr2().read().bren() == Retention::PRESERVED
             };
             #[cfg(not(stm32h7))]
-            unsafe { 
+            unsafe {
                 super::BKSRAM_RETAINED = crate::pac::PWR.bdcr().read().bren() == Retention::Preserved
             };
 
