@@ -687,7 +687,7 @@ fn put_tx_header(mailbox: &mut TxBufferElement, header: &Header) {
     mailbox.header.write(|w| {
         unsafe { w.id().bits(id) }
             .rtr()
-            .bit(header.len() == 0 && header.rtr())
+            .bit(header.rtr())
             .xtd()
             .set_id_type(id_type)
             .set_len(DataLength::new(header.len(), frame_format))
