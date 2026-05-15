@@ -117,7 +117,7 @@ impl LsConfig {
 
     pub const fn default_lse() -> Self {
         Self {
-            rtc: RtcClockSource::Lse,
+            rtc: RtcClockSource::LSE,
             lse: Some(LseConfig {
                 frequency: Hertz(32_768),
                 mode: LseMode::Oscillator(LseDrive::MediumHigh),
